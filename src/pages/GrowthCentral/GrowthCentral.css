@@ -1,0 +1,764 @@
+/* ════════════════════════════════════════════════════════════
+   GROWTH CENTRAL — theme tokens (kept local so this page can't
+   drift from the shared dashboard look even if loaded standalone)
+   ════════════════════════════════════════════════════════════ */
+.growth-page {
+  --gc-brand: #2962ff;
+  --gc-brand-dark: #1e4fd6;
+  --gc-bg: #f5f7ff;
+  --gc-radius: 20px;
+  --gc-radius-sm: 14px;
+  --gc-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  --gc-shadow-md: 0 8px 28px rgba(41, 98, 255, 0.10);
+  --gc-shadow-lg: 0 16px 40px rgba(41, 98, 255, 0.14);
+  --gc-border: 1px solid #f1f3f6;
+  --gc-text: #1a1d23;
+  --gc-text-dim: #6b7280;
+  --gc-text-faint: #9aa1ad;
+
+  font-family: "Plus Jakarta Sans", "Poppins", -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--gc-bg);
+  padding: 28px 32px 60px;
+  color: var(--gc-text);
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.growth-page * {
+  box-sizing: border-box;
+}
+
+/* ── Page header ──────────────────────────────────────────── */
+.growth-page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  animation: gc-fade-up 0.5s ease both;
+}
+
+.growth-page__title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px 0;
+  color: var(--gc-text);
+}
+
+.growth-page__subtitle {
+  font-size: 14.5px;
+  color: var(--gc-text-dim);
+  margin: 0;
+}
+
+/* ── Hero banner ──────────────────────────────────────────── */
+.growth-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding: 30px 36px;
+  border-radius: var(--gc-radius);
+  background: linear-gradient(135deg, #2962ff 0%, #5b8dff 55%, #82a9ff 100%);
+  box-shadow: var(--gc-shadow-lg);
+  color: #fff;
+  margin-bottom: 28px;
+  animation: gc-fade-up 0.55s ease both;
+  animation-delay: 0.05s;
+}
+
+.growth-hero__glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.growth-hero__glow--a {
+  width: 280px;
+  height: 280px;
+  background: rgba(255, 255, 255, 0.18);
+  top: -120px;
+  right: -60px;
+}
+
+.growth-hero__glow--b {
+  width: 200px;
+  height: 200px;
+  background: rgba(255, 255, 255, 0.12);
+  bottom: -100px;
+  left: 10%;
+}
+
+.growth-hero__score {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.growth-hero__score-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.growth-hero__score-label {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.growth-hero__score-caption {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 190px;
+}
+
+.radial-score {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radial-score__bar {
+  transition: stroke-dashoffset 1s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.radial-score__label {
+  position: absolute;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.radial-score__value {
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.radial-score__max {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.growth-hero__stats {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.growth-hero__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.growth-hero__stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.growth-hero__stat-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.growth-hero__cta {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  color: var(--gc-brand);
+  border: none;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 13px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  white-space: nowrap;
+}
+
+.growth-hero__cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+}
+
+.growth-hero__cta:active {
+  transform: translateY(0);
+}
+
+/* ── KPI growth cards ─────────────────────────────────────── */
+.growth-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin-bottom: 32px;
+}
+
+.growth-card {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(14px);
+  border: var(--gc-border);
+  border-radius: var(--gc-radius);
+  box-shadow: var(--gc-shadow);
+  padding: 20px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  animation: gc-fade-up 0.5s ease both;
+  animation-delay: 0.1s;
+}
+
+.growth-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--gc-shadow-md);
+}
+
+.growth-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.growth-card__icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(41, 98, 255, 0.10);
+  color: var(--gc-brand);
+}
+
+.growth-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.10);
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+
+.growth-card__metric {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 6px 0 0;
+  letter-spacing: -0.01em;
+}
+
+.growth-card__label {
+  font-size: 13px;
+  color: var(--gc-text-dim);
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.growth-card__sub {
+  font-weight: 400;
+  color: var(--gc-text-faint);
+}
+
+.mini-trend {
+  width: 100%;
+  height: 44px;
+  display: block;
+}
+
+/* ── Section heading shared by all lower sections ────────── */
+.growth-section {
+  margin-bottom: 36px;
+}
+
+.growth-section--last {
+  margin-bottom: 8px;
+}
+
+.growth-section__heading {
+  margin-bottom: 18px;
+}
+
+.growth-section__heading h2 {
+  font-size: 19px;
+  font-weight: 800;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.growth-section__heading p {
+  font-size: 13.5px;
+  color: var(--gc-text-dim);
+  margin: 0;
+}
+
+/* ── Growth opportunities ─────────────────────────────────── */
+.opportunity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 18px;
+}
+
+.opportunity-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  border: var(--gc-border);
+  border-radius: var(--gc-radius);
+  box-shadow: var(--gc-shadow);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.opportunity-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--gc-shadow-md);
+  border-color: rgba(41, 98, 255, 0.25);
+}
+
+.opportunity-card__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(41, 98, 255, 0.14), rgba(41, 98, 255, 0.05));
+  color: var(--gc-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.opportunity-card__impact {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gc-text-faint);
+  background: #f1f3f9;
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+
+.opportunity-card__impact--high {
+  color: var(--gc-brand);
+  background: rgba(41, 98, 255, 0.10);
+}
+
+.opportunity-card__title {
+  font-size: 15.5px;
+  font-weight: 700;
+  margin: 4px 0 0;
+}
+
+.opportunity-card__desc {
+  font-size: 13px;
+  color: var(--gc-text-dim);
+  line-height: 1.5;
+  margin: 0;
+  flex: 1;
+}
+
+.opportunity-card__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: transparent;
+  color: var(--gc-brand);
+  border: 1.5px solid rgba(41, 98, 255, 0.25);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.opportunity-card__cta:hover {
+  background: var(--gc-brand);
+  color: #fff;
+  transform: translateX(2px);
+}
+
+/* ── Revenue analytics ────────────────────────────────────── */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.analytics-card {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  border: var(--gc-border);
+  border-radius: var(--gc-radius);
+  box-shadow: var(--gc-shadow);
+  padding: 22px;
+  transition: box-shadow 0.22s ease;
+}
+
+.analytics-card:hover {
+  box-shadow: var(--gc-shadow-md);
+}
+
+.analytics-card--wide {
+  grid-column: 1 / -1;
+}
+
+.analytics-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.analytics-card__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.analytics-card__icon--blue {
+  background: rgba(41, 98, 255, 0.10);
+  color: var(--gc-brand);
+}
+
+.analytics-card__icon--green {
+  background: rgba(22, 163, 74, 0.10);
+  color: #16a34a;
+}
+
+.analytics-card__icon--purple {
+  background: rgba(147, 51, 234, 0.10);
+  color: #9333ea;
+}
+
+.analytics-card__head h3 {
+  font-size: 14.5px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.analytics-card__head p {
+  font-size: 12px;
+  color: var(--gc-text-faint);
+  margin: 0;
+}
+
+.trend-chart {
+  position: relative;
+}
+
+.trend-chart__svg {
+  width: 100%;
+  height: 180px;
+  display: block;
+  overflow: visible;
+}
+
+.trend-chart__grid {
+  stroke: #eef0f6;
+  stroke-width: 1;
+}
+
+.trend-chart__hover-line {
+  stroke: #d3dcff;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.trend-chart__tooltip {
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -110%);
+  background: #1a1d23;
+  color: #fff;
+  font-size: 11.5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.trend-chart__tooltip-label {
+  font-weight: 600;
+  opacity: 0.75;
+  font-size: 10px;
+}
+
+.trend-chart__tooltip-value {
+  font-weight: 800;
+}
+
+.trend-chart__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--gc-text-faint);
+  padding: 0 4px;
+}
+
+.trend-chart__axis-dim {
+  opacity: 0;
+}
+
+@media (max-width: 900px) {
+  .trend-chart__axis-dim {
+    opacity: 1;
+  }
+}
+
+/* ── Achievements ─────────────────────────────────────────── */
+.achievement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.achievement-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  border: var(--gc-border);
+  border-radius: var(--gc-radius);
+  box-shadow: var(--gc-shadow);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.achievement-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--gc-shadow-md);
+}
+
+.achievement-card::before {
+  content: "";
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+.achievement-card--blue::before { background: radial-gradient(circle, rgba(41,98,255,0.20), transparent 70%); }
+.achievement-card--gold::before { background: radial-gradient(circle, rgba(245,158,11,0.22), transparent 70%); }
+.achievement-card--green::before { background: radial-gradient(circle, rgba(22,163,74,0.20), transparent 70%); }
+.achievement-card--purple::before { background: radial-gradient(circle, rgba(147,51,234,0.20), transparent 70%); }
+
+.achievement-card__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+
+.achievement-card--blue .achievement-card__icon { background: rgba(41,98,255,0.12); color: var(--gc-brand); }
+.achievement-card--gold .achievement-card__icon { background: rgba(245,158,11,0.16); color: #b45309; }
+.achievement-card--green .achievement-card__icon { background: rgba(22,163,74,0.14); color: #16a34a; }
+.achievement-card--purple .achievement-card__icon { background: rgba(147,51,234,0.14); color: #9333ea; }
+
+.achievement-card__title {
+  font-size: 14.5px;
+  font-weight: 700;
+  margin: 4px 0 0;
+  position: relative;
+  z-index: 1;
+}
+
+.achievement-card__desc {
+  font-size: 12.5px;
+  color: var(--gc-text-dim);
+  line-height: 1.5;
+  margin: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.achievement-card__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #16a34a;
+  margin-top: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Recommended actions panel ────────────────────────────── */
+.recommend-panel {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  border: var(--gc-border);
+  border-radius: var(--gc-radius);
+  box-shadow: var(--gc-shadow);
+  overflow: hidden;
+}
+
+.recommend-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid #f1f3f6;
+  transition: background 0.18s ease;
+}
+
+.recommend-row:last-child {
+  border-bottom: none;
+}
+
+.recommend-row:hover {
+  background: rgba(41, 98, 255, 0.04);
+}
+
+.recommend-row__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: rgba(41, 98, 255, 0.10);
+  color: var(--gc-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.recommend-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.recommend-row__text h4 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.recommend-row__text p {
+  font-size: 12.5px;
+  color: var(--gc-text-dim);
+  margin: 0;
+}
+
+.recommend-row__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1.5px solid rgba(41, 98, 255, 0.25);
+  color: var(--gc-brand);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.recommend-row__cta:hover {
+  background: var(--gc-brand);
+  color: #fff;
+}
+
+/* ── Animations ────────────────────────────────────────────── */
+@keyframes gc-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-page * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .growth-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+  .analytics-card--wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .growth-page {
+    padding: 20px 16px 48px;
+  }
+  .growth-cards {
+    grid-template-columns: 1fr;
+  }
+  .growth-hero {
+    padding: 26px 22px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .growth-hero__cta {
+    width: 100%;
+    justify-content: center;
+  }
+  .recommend-row {
+    flex-wrap: wrap;
+  }
+  .recommend-row__cta {
+    margin-left: 52px;
+  }
+}

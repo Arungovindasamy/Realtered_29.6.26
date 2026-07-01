@@ -1,0 +1,229 @@
+/* src/components/common/TermsOfUsePage.css */
+
+/* ── Root — also overrides leftover fixed/hidden rules from SignIn/SignUp CSS ── */
+html, body, #root {
+  overflow-y: auto !important;
+  height: auto !important;
+  position: static !important;
+  inset: auto !important;
+  touch-action: auto !important;
+  overscroll-behavior: auto !important;
+}
+
+.tou-root {
+  background: #F5F7FF;
+  min-height: 100vh;
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  color: #1a1d23;
+  overflow-x: hidden;
+  overflow-y: auto;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* ── Close button (fixed top-right) ──────────────────────── */
+.tou-close-fab {
+  position: fixed !important;
+  top: 20px !important;
+  right: clamp(12px, 4vw, 40px) !important;
+  left: auto !important;
+  bottom: auto !important;
+  z-index: 999 !important;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: 1.5px solid #e8ecf5;
+  border-radius: 50%;
+  color: #374151;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(41,98,255,0.12);
+  transition: all 0.18s;
+}
+.tou-close-fab:hover {
+  background: #f0f4ff;
+  border-color: #2962FF;
+  color: #2962FF;
+  transform: scale(1.06);
+}
+@media (max-width: 480px) {
+  .tou-close-fab { top: 14px !important; right: 14px !important; width: 36px; height: 36px; }
+}
+
+/* ── Hero ─────────────────────────────────────────────────── */
+.tou-hero {
+  background: linear-gradient(135deg, #1a3fcc 0%, #2962FF 55%, #5b8aff 100%);
+  margin: 20px clamp(12px, 4vw, 40px) 0;
+  border-radius: 24px;
+  padding: clamp(24px, 5vw, 52px) clamp(20px, 5vw, 56px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 12px 40px rgba(41,98,255,0.3);
+  box-sizing: border-box;
+}
+.tou-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 75% 20%, rgba(255,255,255,0.1) 0%, transparent 60%);
+  pointer-events: none;
+}
+.tou-hero-inner { flex: 1; position: relative; }
+.tou-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 18px;
+  backdrop-filter: blur(8px);
+}
+.tou-hero-title {
+  font-size: 38px;
+  font-weight: 800;
+  color: white;
+  margin: 0 0 12px;
+  letter-spacing: -0.6px;
+  line-height: 1.16;
+}
+.tou-hero-subtitle {
+  font-size: 16px;
+  color: rgba(255,255,255,0.82);
+  margin: 0;
+  max-width: 560px;
+  line-height: 1.65;
+}
+.tou-hero-art {
+  flex-shrink: 0;
+  width: 160px;
+  opacity: 0.95;
+}
+.tou-hero-art svg { width: 160px; height: 160px; filter: drop-shadow(0 10px 28px rgba(0,0,0,0.18)); }
+
+/* ── Content wrapper ─────────────────────────────────────── */
+.tou-content {
+  max-width: 1100px;
+  margin: 32px auto 60px;
+  padding: 0 clamp(12px, 4vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  box-sizing: border-box;
+}
+
+/* ── Section base ─────────────────────────────────────────── */
+.tou-section {
+  background: white;
+  border-radius: 20px;
+  padding: 32px 40px;
+  border: 1.5px solid #edf0fb;
+  box-shadow: 0 2px 16px rgba(41,98,255,0.04);
+  transition: box-shadow 0.2s;
+  box-sizing: border-box;
+  width: 100%;
+}
+.tou-section:hover { box-shadow: 0 6px 28px rgba(41,98,255,0.08); }
+
+.tou-section-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2962FF, #5b8aff);
+  color: white;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+}
+.tou-section-title {
+  font-size: 21px;
+  font-weight: 800;
+  color: #1a1d23;
+  margin: 0 0 12px;
+  letter-spacing: -0.3px;
+}
+.tou-para {
+  font-size: 15px;
+  color: #374151;
+  line-height: 1.75;
+  margin: 0;
+  max-width: 780px;
+}
+
+/* ── Contact card ─────────────────────────────────────────── */
+.tou-contact-card {
+  background: linear-gradient(135deg, #eef2ff, #e4edff);
+  border: 1.5px solid #c7d9ff;
+  border-radius: 16px;
+  padding: 32px;
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+  margin-top: 18px;
+}
+.tou-contact-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #c7d9ff;
+  margin: 0 36px;
+  flex-shrink: 0;
+}
+.tou-contact-block {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.tou-contact-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  background: #2962FF;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+.tou-contact-block div { display: flex; flex-direction: column; gap: 5px; }
+.tou-contact-block label { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; }
+.tou-contact-block a { font-size: 14px; font-weight: 600; color: #2962FF; text-decoration: none; word-break: break-all; }
+.tou-contact-block a:hover { text-decoration: underline; }
+.tou-contact-block address { font-style: normal; font-size: 13px; color: #374151; line-height: 1.7; word-break: break-word; }
+
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .tou-hero-art      { display: none; }
+  .tou-hero-title    { font-size: 26px; }
+  .tou-hero-subtitle { font-size: 14px; }
+  .tou-section       { padding: 22px 18px; border-radius: 16px; }
+  .tou-section-title { font-size: 17px; }
+  .tou-contact-card  { flex-direction: column; gap: 24px; padding: 22px; }
+  .tou-contact-divider { width: 100%; height: 1px; margin: 0; }
+}
+
+@media (max-width: 480px) {
+  .tou-hero-title    { font-size: 21px; }
+  .tou-hero-subtitle { font-size: 13px; }
+  .tou-section       { padding: 18px 14px; border-radius: 12px; }
+  .tou-section-title { font-size: 16px; }
+  .tou-para          { font-size: 13.5px; }
+  .tou-contact-card  { padding: 18px 14px; }
+}

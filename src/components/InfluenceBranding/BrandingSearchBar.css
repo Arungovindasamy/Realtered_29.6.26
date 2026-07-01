@@ -1,0 +1,203 @@
+.ib-search-bar-wrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--card-bg, #ffffff);
+  border-radius: 16px;
+  padding: 14px 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.02);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ── Search Input ── */
+.ib-search-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 440px;
+  min-width: 240px;
+  background: #f8fafc;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  border-radius: 12px;
+  padding: 0 14px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.ib-search-input-container:focus-within {
+  background: #ffffff;
+  border-color: var(--primary, #2962FF);
+  box-shadow: 0 0 0 3px rgba(41, 98, 255, 0.12);
+}
+
+.ib-search-icon {
+  color: var(--text-secondary, #64748B);
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.ib-search-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  height: 42px;
+  font-size: 13.5px;
+  color: var(--text-primary, #1A1A1A);
+  font-family: inherit;
+}
+
+.ib-search-clear-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #64748B);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.ib-search-clear-btn:hover {
+  background: #e2e8f0;
+  color: var(--text-primary, #1A1A1A);
+}
+
+/* ── Tabs Filter ── */
+.ib-tabs-container {
+  display: flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ib-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748B);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.ib-tab-btn:hover:not(.active) {
+  color: var(--text-primary, #1A1A1A);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.ib-tab-btn.active {
+  background: var(--card-bg, #ffffff);
+  color: var(--primary, #2962FF);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.ib-tab-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 99px;
+  font-weight: 700;
+}
+
+.bg-green {
+  background: #E8F9EE;
+  color: var(--success, #00C853);
+}
+
+.bg-grey {
+  background: #e2e8f0;
+  color: var(--text-secondary, #64748B);
+}
+
+.ib-tab-btn.active .bg-green {
+  background: var(--success, #00C853);
+  color: #ffffff;
+}
+
+.ib-tab-btn.active .bg-grey {
+  background: var(--text-secondary, #64748B);
+  color: #ffffff;
+}
+
+.ib-select-multiple-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  background: #ffffff;
+  padding: 0 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748B);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  height: 44px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.ib-select-multiple-btn:hover {
+  background: #f8fafc;
+  color: var(--text-primary, #1A1A1A);
+  border-color: rgba(203, 213, 225, 0.8);
+}
+
+.ib-select-multiple-btn.active {
+  background: #eff6ff;
+  color: var(--primary, #2962FF);
+  border-color: var(--primary, #2962FF);
+  box-shadow: 0 2px 8px rgba(41, 98, 255, 0.1);
+}
+
+@media (max-width: 991px) {
+  .ib-search-bar-wrap {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px;
+    gap: 12px;
+  }
+  .ib-search-input-container {
+    max-width: 100%;
+    min-width: 0; /* reset min-width when stacked */
+  }
+  .ib-select-multiple-btn {
+    width: 100%;
+    height: 42px;
+  }
+  .ib-tabs-container {
+    width: 100%;
+  }
+  .ib-tab-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .ib-tab-btn {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    gap: 4px !important;
+  }
+}

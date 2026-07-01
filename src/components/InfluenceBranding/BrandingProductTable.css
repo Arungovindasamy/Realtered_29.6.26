@@ -1,0 +1,259 @@
+.ib-table-card {
+  background: var(--card-bg, #ffffff);
+  border-radius: var(--radius, 20px);
+  box-shadow: var(--shadow, 0 10px 30px rgba(41,98,255,0.08));
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.ib-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ib-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.ib-table th {
+  background: #f8fafc;
+  padding: 16px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary, #64748B);
+  border-bottom: 1px solid #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ib-table td {
+  padding: 16px 20px;
+  font-size: 13.5px;
+  color: var(--text-primary, #1A1A1A);
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  transition: background 0.15s ease;
+}
+
+.ib-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ib-table tr:hover td {
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.ib-table tr.row-selected td {
+  background: rgba(41, 98, 255, 0.02);
+}
+
+/* ── Checkbox Styling ── */
+.ib-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ib-checkbox-label input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.ib-custom-checkbox {
+  position: relative;
+  height: 20px;
+  width: 20px;
+  background-color: #ffffff;
+  border: 2px solid #cbd5e1;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.ib-checkbox-label:hover input ~ .ib-custom-checkbox {
+  border-color: var(--primary, #2962FF);
+}
+
+.ib-checkbox-label input:checked ~ .ib-custom-checkbox {
+  background-color: var(--primary, #2962FF);
+  border-color: var(--primary, #2962FF);
+}
+
+.ib-custom-checkbox:after {
+  content: "";
+  position: absolute;
+  display: none;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.ib-checkbox-label input:checked ~ .ib-custom-checkbox:after {
+  display: block;
+}
+
+/* ── Columns specifics ── */
+.ib-col-check { width: 60px; text-align: center; }
+.ib-col-image { width: 100px; }
+.ib-col-name { width: auto; }
+.ib-col-price { width: 120px; }
+.ib-col-stock { width: 120px; }
+.ib-col-status { width: 160px; }
+.ib-col-actions { width: 180px; }
+
+.ib-product-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  background: #f8fafc;
+  display: block;
+}
+
+.ib-product-name-link {
+  font-weight: 600;
+  color: var(--text-primary, #1A1A1A);
+  cursor: pointer;
+  transition: color 0.15s, text-decoration 0.15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  max-width: 380px;
+}
+
+.ib-product-name-link:hover {
+  color: var(--primary, #2962FF);
+  text-decoration: underline;
+}
+
+.ib-price-value {
+  font-weight: 700;
+  color: var(--text-primary, #1A1A1A);
+}
+
+.ib-stock-value {
+  font-weight: 600;
+}
+
+.ib-stock-value.low-stock {
+  color: var(--warning, #FF9800);
+}
+
+/* ── Status Badges ── */
+.ib-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ib-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.ib-status-badge.enabled {
+  background: #E8F9EE;
+  color: var(--success, #00C853);
+}
+
+.ib-status-badge.enabled .ib-status-dot {
+  background: var(--success, #00C853);
+}
+
+.ib-status-badge.disabled {
+  background: #f1f5f9;
+  color: var(--text-secondary, #64748B);
+}
+
+.ib-status-badge.disabled .ib-status-dot {
+  background: var(--text-secondary, #64748B);
+}
+
+/* ── Buttons inside Row ── */
+.ib-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ib-action-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  background: #ffffff;
+  color: var(--text-secondary, #64748B);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ib-action-icon-btn:hover {
+  border-color: var(--primary, #2962FF);
+  color: var(--primary, #2962FF);
+  background: var(--primary-light, #EAF1FF);
+}
+
+.ib-action-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.btn-primary-gradient {
+  background: linear-gradient(135deg, var(--primary, #2962FF) 0%, #1e3c72 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(41, 98, 255, 0.15);
+}
+
+.btn-primary-gradient:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 15px rgba(41, 98, 255, 0.25);
+}
+
+.btn-danger {
+  background: #FFEBEA;
+  color: var(--danger, #F44336);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+}
+
+.btn-danger:hover {
+  background: var(--danger, #F44336);
+  color: #ffffff;
+}
+
+@media (max-width: 1024px) {
+  .ib-col-actions {
+    width: 160px;
+  }
+  .ib-product-name-link {
+    max-width: 200px;
+  }
+}

@@ -1,0 +1,93 @@
+/* ReferralFaq.css */
+
+.faq-container {
+  width: 100%;
+  margin-top: 24px;
+}
+
+.faq-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 20px;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.faq-item {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.faq-item:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.05);
+}
+
+.faq-item--open {
+  border-color: #2563eb;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.08);
+}
+
+.faq-question-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.2s ease;
+}
+
+.faq-question-btn:focus {
+  outline: none;
+}
+
+.faq-question-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.faq-toggle-icon {
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+}
+
+.faq-item:hover .faq-toggle-icon {
+  color: #3b82f6;
+}
+
+.faq-item--open .faq-toggle-icon {
+  color: #2563eb;
+}
+
+.faq-answer-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.faq-item--open .faq-answer-wrapper {
+  max-height: 150px;
+}
+
+.faq-answer-content {
+  padding: 0 24px 20px 24px;
+  font-size: 14.5px;
+  color: #4b5563;
+  line-height: 1.5;
+}

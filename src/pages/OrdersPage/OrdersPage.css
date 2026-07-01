@@ -1,0 +1,614 @@
+.orders-page {
+  padding: 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.orders-header {
+  position: relative;
+  z-index: 100;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-color: #ffffff !important;
+}
+
+.orders-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.orders-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0 0 4px;
+  letter-spacing: -0.02em;
+}
+
+.orders-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.orders-header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.orders-filters {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.orders-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid #E5E9F5;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  flex: 1;
+  min-width: 220px;
+  color: var(--text-muted);
+  transition: border-color 0.2s ease;
+}
+
+.orders-date-filter-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  box-sizing: border-box;
+}
+
+.orders-date-filter-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid #E5E9F5;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  width: 100%;
+  color: var(--text-muted);
+  transition: border-color 0.2s ease;
+  cursor: pointer;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.orders-search:focus-within,
+.orders-date-filter-trigger:hover {
+  border-color: var(--primary);
+}
+
+.orders-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  width: 100%;
+  font-family: inherit;
+  color: var(--text-dark);
+}
+
+.orders-date-text {
+  font-size: 14px;
+  color: var(--text-dark);
+  font-weight: 500;
+  flex-grow: 1;
+}
+
+.orders-date-clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.orders-date-clear-btn:hover {
+  color: var(--primary);
+}
+
+.orders-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  overflow-x: auto;
+}
+
+.order-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+
+.order-tab:hover {
+  color: var(--primary);
+  background: rgba(41, 98, 255, 0.06);
+}
+
+.order-tab.active {
+  color: var(--primary);
+}
+
+.tab-badge {
+  background: rgba(41, 98, 255, 0.12);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.order-tab.active .tab-badge {
+  background: var(--primary);
+  color: #fff;
+}
+
+.tab-underline {
+  position: absolute;
+  bottom: -10px;
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1024px) {
+  .orders-page {
+    padding: 20px 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .orders-page {
+    padding: 16px 12px;
+  }
+
+  .orders-header {
+    padding: 18px;
+  }
+
+  .orders-title {
+    font-size: 22px;
+  }
+
+  .orders-header-actions {
+    width: 100%;
+  }
+
+  .orders-header-actions button {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .order-tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
+
+
+/* Custom Date Range Picker / Calendar Styles */
+.orders-calendar-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  background-color: #ffffff;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+  display: flex;
+  overflow: hidden;
+  z-index: 1000;
+  min-width: 390px;
+  width: 390px;
+  animation: dropdownFadeInDesktop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.orders-calendar-dropdown:hover {
+  transform: translateX(-50%) !important;
+}
+
+@keyframes dropdownFadeInDesktop {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.orders-calendar-close-btn {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: #94A3B8;
+  cursor: pointer;
+  z-index: 1001;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.orders-calendar-close-btn:hover {
+  color: #EF4444;
+}
+
+.orders-calendar-sidebar {
+  width: 110px;
+  border-right: 1px solid #EEF2F6;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: #F8FAFC;
+}
+
+.calendar-preset-btn {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.calendar-preset-btn:hover {
+  background-color: #EDF2F7;
+  color: var(--primary);
+}
+
+.calendar-preset-btn.clear-btn {
+  margin-top: auto;
+  border-top: 1px solid #E2E8F0;
+  border-radius: 0;
+  padding-top: 10px;
+  color: #EF4444;
+}
+
+.calendar-preset-btn.clear-btn:hover {
+  background-color: #FEF2F2;
+  color: #DC2626;
+}
+
+.orders-calendar-main {
+  position: relative;
+  flex: 1;
+  padding: 16px 14px;
+}
+
+.orders-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.calendar-nav-btn {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  font-weight: bold;
+  color: #64748B;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.calendar-nav-btn:hover {
+  background-color: #F1F5F9;
+  color: var(--primary);
+}
+
+.calendar-month-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.orders-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94A3B8;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.orders-calendar-days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.orders-calendar-day {
+  background: transparent;
+  border: none;
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  outline: none;
+  margin: 0 auto;
+}
+
+.orders-calendar-day:hover:not(:disabled) {
+  background-color: #E2E8F0;
+  color: #1E293B;
+}
+
+.orders-calendar-day:disabled {
+  cursor: default;
+  color: #CBD5E1;
+}
+
+.orders-calendar-day-empty {
+  width: 32px;
+  height: 32px;
+  visibility: hidden;
+}
+
+/* Range Highlighting */
+.orders-calendar-day.is-start-date,
+.orders-calendar-day.is-end-date {
+  background-color: var(--primary) !important;
+  color: #ffffff !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 6px rgba(41, 98, 255, 0.3);
+}
+
+.orders-calendar-day.in-range {
+  background-color: rgba(41, 98, 255, 0.08) !important;
+  color: var(--primary) !important;
+  border-radius: 0 !important;
+}
+
+.orders-calendar-day.in-range-hover {
+  background-color: rgba(41, 98, 255, 0.04) !important;
+  color: var(--primary) !important;
+  border-radius: 0 !important;
+}
+
+/* Desktop spacing / flex alignments */
+@media (min-width: 992px) {
+  .orders-filters {
+    flex-wrap: nowrap;
+  }
+}
+
+/* Styling for the new single dropdown selector */
+.orders-status-dropdown-container {
+  display: none; /* Hidden by default on desktop/laptop */
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.orders-status-select {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid #E5E9F5;
+  background-color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dark);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 16px;
+  padding-right: 40px;
+  box-sizing: border-box !important;
+}
+
+.orders-status-select:hover {
+  border-color: var(--primary);
+}
+
+.orders-status-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(41, 98, 255, 0.1);
+}
+
+/* Mobile Header top bar */
+.orders-mobile-header {
+  height: 56px;
+  background: #2962FF;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+}
+
+.orders-mobile-header .mobile-back-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.orders-mobile-header-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Responsiveness for smaller viewports */
+@media (max-width: 768px) {
+  .orders-status-select {
+    font-size: 16px !important;
+  }
+
+  .orders-status-select:focus {
+    box-shadow: none !important;
+  }
+
+  .orders-filters {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .orders-search,
+  .orders-date-filter-wrapper {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .orders-calendar-dropdown {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    margin: 0 !important;
+    z-index: 1000 !important;
+    min-width: 270px !important;
+    width: 270px !important;
+    max-width: none !important;
+    animation: dropdownFadeInMobile 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    flex-direction: column !important;
+  }
+
+  .orders-calendar-sidebar {
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    padding: 8px !important;
+    gap: 8px !important;
+    background-color: #F8FAFC !important;
+  }
+
+  .calendar-preset-btn {
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+  }
+
+  .calendar-preset-btn.clear-btn {
+    margin-top: 0 !important;
+    border-top: none !important;
+    padding-top: 6px !important;
+  }
+
+  .orders-calendar-main {
+    padding: 12px !important;
+  }
+
+  .orders-calendar-day {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 12px !important;
+  }
+
+  .orders-calendar-days-grid {
+    gap: 2px !important;
+  }
+
+  .orders-calendar-header {
+    margin-top: 12px !important;
+    margin-bottom: 8px !important;
+  }
+}
+
+@keyframes dropdownFadeInMobile {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Inherits absolute placement below trigger */
+}
+
+/* Responsive visibility overrides for status tabs vs dropdown */
+@media (max-width: 640px) {
+  .orders-status-dropdown-container {
+    display: flex;
+  }
+  .orders-tabs {
+    display: none;
+  }
+}
+
+/* Tablet responsiveness: Switch to dropdown if sidebar is open on smaller viewports */
+@media (max-width: 1024px) {
+  .sidebar-open .orders-status-dropdown-container {
+    display: flex;
+  }
+  .sidebar-open .orders-tabs {
+    display: none;
+  }
+}

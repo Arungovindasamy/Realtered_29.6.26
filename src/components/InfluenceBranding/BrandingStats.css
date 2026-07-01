@@ -1,0 +1,114 @@
+.ib-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.ib-stat-card {
+  background: var(--card-bg, #ffffff);
+  border-radius: var(--radius, 20px);
+  padding: 24px;
+  box-shadow: var(--shadow, 0 10px 30px rgba(41,98,255,0.08));
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.ib-stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 15px 35px rgba(41, 98, 255, 0.12);
+}
+
+.ib-stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: #CBD5E1;
+}
+
+.ib-stat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ib-stat-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748B);
+}
+
+.ib-stat-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ib-stat-body {
+  display: flex;
+  align-items: flex-end;
+}
+
+.ib-stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary, #1A1A1A);
+  line-height: 1;
+}
+
+/* ── Accents & Themes ── */
+/* Total */
+.ib-stat-total::before { background: var(--primary, #2962FF); }
+.ib-stat-total .ib-stat-icon-wrap {
+  background: var(--primary-light, #EAF1FF);
+  color: var(--primary, #2962FF);
+}
+
+/* Enabled */
+.ib-stat-enabled::before { background: var(--success, #00C853); }
+.ib-stat-enabled .ib-stat-icon-wrap {
+  background: #E8F9EE;
+  color: var(--success, #00C853);
+}
+
+/* Disabled */
+.ib-stat-disabled::before { background: var(--text-secondary, #64748B); }
+.ib-stat-disabled .ib-stat-icon-wrap {
+  background: #F1F5F9;
+  color: var(--text-secondary, #64748B);
+}
+
+/* Coverage */
+.ib-stat-coverage::before { background: #ffb300; }
+.ib-stat-coverage .ib-stat-icon-wrap {
+  background: #FFFBEB;
+  color: #ffb300;
+}
+
+@media (max-width: 991px) {
+  .ib-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (max-width: 576px) {
+  .ib-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}

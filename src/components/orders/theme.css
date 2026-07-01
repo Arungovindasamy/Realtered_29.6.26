@@ -1,0 +1,181 @@
+/* ===== Haatza Orders Module - Shared Theme ===== */
+:root {
+  --primary: #2962FF;
+  --primary-light: #5B85FF;
+  --bg: #F5F7FF;
+  --glass: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --shadow-soft: 0 8px 32px rgba(41, 98, 255, 0.08);
+  --shadow-hover: 0 12px 40px rgba(41, 98, 255, 0.15);
+  --radius: 20px;
+  --radius-sm: 12px;
+  --text-dark: #1A1F36;
+  --text-muted: #6B7280;
+  --green: #16A34A;
+  --red: #DC2626;
+  --orange: #F59E0B;
+  --blue: #2962FF;
+}
+
+.haatza-page {
+  font-family: 'Plus Jakarta Sans', 'Poppins', sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  color: var(--text-dark);
+}
+
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 0 4px rgba(41, 98, 255, 0.18), 0 8px 20px rgba(41, 98, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #fff;
+  color: var(--text-dark);
+  border: 1.5px solid #E5E9F5;
+  border-radius: var(--radius-sm);
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: #FEF2F2;
+}
+
+.btn-danger-outline {
+  background: #fff;
+  color: var(--red);
+  border: 1.5px solid #FECACA;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.status-confirmed { background: rgba(41, 98, 255, 0.12); color: var(--blue); }
+.status-shipped { background: rgba(22, 163, 74, 0.12); color: var(--green); }
+.status-cancelled { background: rgba(220, 38, 38, 0.12); color: var(--red); }
+.status-pending { background: rgba(245, 158, 11, 0.12); color: var(--orange); }
+
+/* Shimmer / skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #EEF2FF 25%, #F7F9FF 37%, #EEF2FF 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-state h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 16px 0 6px;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 31, 54, 0.35);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-card {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0 20px 60px rgba(41, 98, 255, 0.2);
+  padding: 32px;
+  width: 420px;
+  max-width: 92vw;
+}
+
+.modal-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: rgba(41, 98, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1024px) {
+  .grid-2col { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 640px) {
+  .grid-2col, .grid-3col { grid-template-columns: 1fr !important; }
+}

@@ -1,0 +1,1035 @@
+.settlements-page-root {
+  padding: 24px;
+  min-height: 100vh;
+  background: #f5f6fa;
+  box-sizing: border-box;
+}
+
+.settlements-page-header {
+  margin-bottom: 24px;
+}
+
+.settlements-page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1d23;
+  margin: 0 0 6px 0;
+  line-height: 1.2;
+}
+
+.settlements-page-header p {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Alert Banner */
+.settlements-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  color: #b91c1c;
+  padding: 14px 18px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.settlements-alert-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 20px;
+  font-weight: 600;
+  color: #b91c1c;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.settlements-alert-close:hover {
+  opacity: 1;
+}
+
+/* Card & Body */
+.settlements-card {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #f1f3f6;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  overflow: visible; /* To allow floating datepicker popover */
+}
+
+.settlements-card-body {
+  padding: 24px;
+}
+
+/* Filters Row */
+.settlements-filters-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.settlements-page-root .search-bar-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 280px;
+  max-width: 420px;
+}
+
+.settlements-page-root .search-icon {
+  position: absolute;
+  left: 14px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.settlements-page-root .search-input {
+  width: 100%;
+  padding: 11px 12px 11px 44px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  background: #fff;
+  color: #1f2937;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.settlements-page-root .search-input:focus {
+  border-color: #2962ff;
+  box-shadow: 0 0 0 3px rgba(41, 98, 255, 0.1);
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Custom Date Range Picker  (cdrp-*)
+   Zero dependency â€” pure React + CSS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/* Root container */
+.cdrp-root {
+  position: relative;
+  z-index: 30;
+  flex-shrink: 0;
+}
+
+/* â”€â”€ Trigger button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.cdrp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  height: 44px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: border-color 0.18s, box-shadow 0.18s;
+  outline: none;
+}
+
+.cdrp-trigger:hover,
+.cdrp-trigger--open {
+  border-color: #2562eb;
+  box-shadow: 0 0 0 3px rgba(37,98,235,0.10);
+}
+
+.cdrp-trigger-cal-icon {
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.cdrp-trigger-label {
+  flex: 1;
+  text-align: left;
+}
+
+.cdrp-trigger-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.cdrp-trigger-clear:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* â”€â”€ Popover panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.cdrp-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 2200;
+  width: 320px;
+  padding: 18px 20px 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow:
+    0 4px 6px rgba(0,0,0,0.04),
+    0 12px 28px rgba(0,0,0,0.10);
+  font-family: inherit;
+  box-sizing: border-box;
+  animation: cdrp-popover-in 0.18s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+@keyframes cdrp-popover-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
+/* â”€â”€ Selection label row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.cdrp-selection-row {
+  margin-bottom: 14px;
+}
+
+.cdrp-selection-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2563eb;
+  letter-spacing: 0.01em;
+}
+
+/* â”€â”€ Nav header (Month/Year dropdowns + arrows) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.cdrp-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cdrp-nav-dropdowns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cdrp-nav-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  padding: 2px 2px;
+}
+
+.cdrp-nav-select--year {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.cdrp-nav-select:focus {
+  outline: none;
+}
+
+.cdrp-nav-arrows {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cdrp-nav-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cdrp-nav-arrow:hover {
+  background-color: #f3f4f6;
+  border-color: #d1d5db;
+  color: #111827;
+}
+
+/* â”€â”€ Calendar grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.cdrp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 2px;
+  margin-bottom: 14px;
+  user-select: none;
+}
+
+/* Weekday header cells */
+.cdrp-weekday {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Day cells (wrapper â€“ handles range strip bg) */
+.cdrp-cell {
+  position: relative;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cdrp-cell--empty {
+  pointer-events: none;
+}
+
+/* Range background strip across the middle cells */
+.cdrp-cell--in-range {
+  background-color: #dbeafe;
+}
+
+/* Half-pill at range start (right half colored) */
+.cdrp-cell--range-start-cap {
+  background: linear-gradient(to right, transparent 50%, #dbeafe 50%);
+}
+
+/* Half-pill at range end (left half colored) */
+.cdrp-cell--range-end-cap {
+  background: linear-gradient(to left, transparent 50%, #dbeafe 50%);
+}
+
+/* Day buttons */
+.cdrp-day-btn {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: #1f2937;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.14s, color 0.14s, border-color 0.14s, transform 0.12s;
+  outline: none;
+}
+
+.cdrp-day-btn:hover:not(:disabled):not(.cdrp-day-btn--selected):not(.cdrp-day-btn--outside) {
+  background-color: #eff6ff;
+  color: #2563eb;
+  transform: scale(1.05);
+}
+
+/* Selected (range start / range end) */
+.cdrp-day-btn--selected {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  transform: scale(1.05);
+}
+
+/* Hover preview for end date */
+.cdrp-day-btn--hover-end {
+  border-color: #2563eb;
+  color: #2563eb;
+  background-color: #eff6ff;
+}
+
+/* Today indicator */
+.cdrp-day-btn--today {
+  border-color: #2563eb;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+/* Weekend days (subtle muted) */
+.cdrp-day-btn--weekend {
+  color: #6b7280;
+}
+
+/* Disabled (future dates) */
+.cdrp-day-btn--disabled,
+.cdrp-day-btn:disabled {
+  color: #d1d5db !important;
+  cursor: not-allowed;
+  background: transparent !important;
+  transform: none !important;
+  border-color: transparent !important;
+}
+
+/* Outside month days */
+.cdrp-day-btn--outside {
+  color: #d1d5db;
+  opacity: 0.6;
+}
+
+/* â”€â”€ Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.cdrp-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid #f3f4f6;
+  gap: 10px;
+}
+
+.cdrp-btn-clear,
+.cdrp-btn-apply {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+  outline: none;
+}
+
+.cdrp-btn-clear {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #4b5563;
+}
+
+.cdrp-btn-clear:hover {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.cdrp-btn-apply {
+  border: none;
+  background-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.22);
+  flex: 1;
+}
+
+.cdrp-btn-apply:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  box-shadow: 0 4px 14px rgba(37,99,235,0.35);
+  transform: translateY(-1px);
+}
+
+.cdrp-btn-apply:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.cdrp-btn-apply:disabled,
+.cdrp-btn-apply[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Mobile: bottom sheet */
+@media (max-width: 480px) {
+  .cdrp-popover {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    padding: 20px 16px 28px;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.14);
+    border: none;
+    animation: cdrp-sheet-up 0.25s cubic-bezier(0.16,1,0.3,1) both;
+  }
+  @keyframes cdrp-sheet-up {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+}
+
+/* Refresh Button */
+.btn-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-refresh:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+  color: #111827;
+}
+
+/* Tabs */
+.settlements-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+}
+
+.settlements-tab-btn {
+  padding: 12px 4px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 15px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settlements-tab-btn:hover {
+  color: #1f2937;
+}
+
+.settlements-tab-btn--active {
+  border-bottom-color: #2962ff;
+  color: #2962ff !important;
+}
+
+/* Loading & Empty State */
+.settlements-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.settlements-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3.5px solid #f3f3f3;
+  border-top: 3.5px solid #2962ff;
+  border-radius: 50%;
+  animation: settlements-spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes settlements-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.settlements-loading p {
+  font-size: 14.5px;
+  color: #4b5563;
+  margin: 0;
+  font-weight: 500;
+}
+
+.settlements-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  color: #9ca3af;
+  margin-bottom: 14px;
+}
+
+.settlements-empty h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 6px 0;
+}
+
+.settlements-empty p {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+/* Table styling */
+.settlements-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.settlements-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.settlements-table th {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #4b5563;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settlements-table td {
+  padding: 16px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #4b5563;
+  vertical-align: middle;
+}
+
+.settlements-table tbody tr:hover {
+  background-color: #fafbfc;
+}
+
+/* Badge */
+.settlement-status-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 4px 10px;
+  border-radius: 50px;
+}
+
+/* Buttons */
+.btn-view-details {
+  background: none;
+  border: 1px solid #2962ff;
+  color: #2962ff;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-view-details:hover {
+  background: #2962ff;
+  color: #fff;
+}
+
+/* Utility Helpers */
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+.text-gray-800 { color: #1f2937; }
+.text-emerald-600 { color: #059669; }
+
+/* Modal overlay & card */
+.settlements-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(17, 24, 39, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+  padding: 16px;
+}
+
+.settlements-modal-card {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 680px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  box-sizing: border-box;
+  animation: settlements-modal-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes settlements-modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.settlements-modal-card .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.settlements-modal-card .modal-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.settlements-modal-card .btn-close-modal {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settlements-modal-card .btn-close-modal:hover {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.settlements-modal-card .modal-body {
+  padding: 24px;
+}
+
+.settlements-modal-card .modal-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.settlements-modal-card .modal-info-row .info-label {
+  color: #4b5563;
+}
+
+.settlements-modal-card .modal-info-row .info-value {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.settlements-modal-card .modal-divider {
+  height: 1px;
+  background-color: #f3f4f6;
+  margin: 16px 0;
+}
+
+.settlements-modal-card .debit-row {
+  margin-bottom: 8px;
+}
+
+.settlements-modal-card .debit-row .info-value {
+  color: #1f2937;
+}
+
+.settlements-modal-card .settlement-row {
+  margin-bottom: 0;
+  margin-top: 14px;
+  font-size: 16px;
+  padding-top: 4px;
+}
+
+.settlements-modal-card .settlement-row .info-label {
+  font-weight: 700;
+}
+
+.settlements-modal-card .settlement-row .info-value {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* Tablet adjustments */
+@media (max-width: 640px) {
+  .settlements-page-root {
+    padding: 16px;
+  }
+  
+  .settlements-card-body {
+    padding: 16px;
+  }
+  
+  .settlements-filters-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-bar-wrapper {
+    max-width: none;
+  }
+  
+  .date-filter-container, .datepicker-popover {
+    width: 100%;
+  }
+  
+  .btn-date-filter {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .drp-root {
+    width: 100%;
+  }
+
+  .drp-trigger {
+    font-size: 14px;
+  }
+
+  /* Redesigned DRP Tablet Layout */
+  .drp-popover {
+    width: 440px;
+    padding: 16px;
+    left: auto;
+    right: 0;
+  }
+  
+  .drp-inputs-row {
+    gap: 8px;
+  }
+  
+  .drp-nav-select {
+    font-size: 18px;
+  }
+}
+
+/* Mobile adjustments (Bottom Sheet) */
+@media (max-width: 480px) {
+  .drp-popover {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12);
+    border: none;
+    padding: 20px 16px 32px 16px;
+    animation: drp-bottom-sheet-slide 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .drp-inputs-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .drp-input-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 0;
+  }
+
+  .drp-nav-select {
+    font-size: 18px;
+  }
+
+  .settlements-page-root .rdp-day {
+    width: auto;
+    height: auto;
+  }
+
+  .settlements-page-root .rdp-day_button {
+    width: 38px;
+    height: 38px;
+    font-size: 14px;
+  }
+}
+
+@keyframes drp-bottom-sheet-slide {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Settlement Breakup Details Grid Layout */
+.settlement-breakup-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settlement-breakup-list.single-item {
+  grid-template-columns: 1fr;
+}
+
+.settlement-breakup-card {
+  width: 100%;
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 10px;
+  border: 1px solid #f1f3f6;
+  box-sizing: border-box;
+}
+
+.payment-detail-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.payment-detail-row .value {
+  text-align: right;
+}
+
+@media (max-width: 768px) {
+  .settlements-modal-card {
+    max-width: 440px;
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+  .settlement-breakup-list {
+    grid-template-columns: 1fr !important;
+  }
+  .payment-detail-row {
+    grid-template-columns: 1fr;
+  }
+  .payment-detail-row .value {
+    text-align: left;
+  }
+
+  /* Table layout conversion to stack cards on mobile */
+  .settlements-table-wrap {
+    overflow-x: visible;
+  }
+  
+  .settlements-table {
+    display: block;
+    width: 100%;
+  }
+  
+  .settlements-table thead {
+    display: none; /* Hide column headers */
+  }
+  
+  .settlements-table tbody {
+    display: block;
+    width: 100%;
+  }
+  
+  .settlements-table tbody tr {
+    display: block;
+    background: #ffffff;
+    border: 1.5px solid #f1f3f6;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    box-sizing: border-box;
+    width: 100%;
+  }
+  
+  .settlements-table tbody tr:hover {
+    background-color: #ffffff;
+  }
+  
+  .settlements-table td {
+    display: block;
+    padding: 6px 0 !important;
+    border-bottom: none !important;
+    font-size: 14px;
+    color: #4b5563;
+    text-align: left;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  /* Status column positioned at top right */
+  .settlements-table td:nth-child(4) {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: auto;
+    padding: 0 !important;
+  }
+  
+  /* Actions column positioned at bottom right */
+  .settlements-table td:nth-child(5) {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+    padding-top: 10px !important;
+    border-top: 1px solid #f3f4f6 !important;
+  }
+  
+  /* Add labels via pseudo-elements */
+  .settlements-table td:nth-child(1):before {
+    content: "Order ID: ";
+    font-weight: 600;
+    color: #4b5563;
+  }
+  
+  .settlements-table td:nth-child(2):before {
+    content: "Amount: ";
+    font-weight: 500;
+    color: #6b7280;
+  }
+  
+  .settlements-table td:nth-child(3):before {
+    content: "Payment Date: ";
+    font-weight: 500;
+    color: #6b7280;
+  }
+  
+  /* Adjust inner text alignments and styles */
+  .settlements-table td:nth-child(1) {
+    font-weight: 700;
+    color: #1f2937;
+    padding-right: 80px !important; /* Avoid overlapping status badge */
+    font-size: 14.5px;
+  }
+  
+  .settlements-table td:nth-child(2) {
+    font-weight: 600;
+    color: #059669;
+  }
+}

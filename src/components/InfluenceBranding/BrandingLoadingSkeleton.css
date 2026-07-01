@@ -1,0 +1,141 @@
+.ib-skeleton-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.ib-skel-shimmer {
+  background: linear-gradient(90deg, #f0f2f5 25%, #e8eaed 50%, #f0f2f5 75%);
+  background-size: 600px 100%;
+  animation: ib-skel-pulse 1.4s infinite linear;
+  border-radius: 6px;
+}
+
+@keyframes ib-skel-pulse {
+  0% { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+/* ── Stats ── */
+.ib-skel-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.ib-skel-card {
+  background: #ffffff;
+  border-radius: var(--radius, 20px);
+  padding: 24px;
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  display: flex;
+  flex-direction: column;
+  height: 98px;
+  box-sizing: border-box;
+}
+
+/* ── Search ── */
+.ib-skel-search-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px 20px;
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  gap: 20px;
+}
+
+.ib-skel-input {
+  width: 100%;
+  max-width: 440px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.ib-skel-tabs {
+  width: 200px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+/* ── Table ── */
+.ib-skel-table-wrap {
+  background: #ffffff;
+  border-radius: var(--radius, 20px);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  overflow: hidden;
+}
+
+.ib-skel-table-header {
+  background: #f8fafc;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ib-skel-table-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.ib-skel-table-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ib-skel-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.ib-skel-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.ib-skel-badge {
+  width: 110px;
+  height: 28px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+
+.ib-skel-btn {
+  width: 90px;
+  height: 32px;
+  border-radius: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ib-skel-text {
+  height: 14px;
+}
+
+@media (max-width: 991px) {
+  .ib-skel-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .ib-skel-search-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .ib-skel-input {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 576px) {
+  .ib-skel-stats {
+    grid-template-columns: 1fr;
+  }
+}
