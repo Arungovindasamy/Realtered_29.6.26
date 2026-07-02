@@ -25,6 +25,22 @@ const safeArray = (value) => {
   return [];
 };
 
+
+const parseProductIds = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
 const extractSellerCampaigns = (response) => {
   const campaigns =
     response?.message?.campaigns ||
@@ -60,7 +76,7 @@ const normalizeCampaign = (item, index) => {
   const startDateTime = item.startDateTime || item.startDate || "";
   const endDateTime = item.endDateTime || item.endDate || "";
   const dailyBudget = Number(item.dailyBudget || 0);
-  const productId = Array.isArray(item.productId) ? item.productId : [];
+  const productId = parseProductIds(item.productId || item.productIds || item.products);
 
   return {
     id: tableId || campaignId || `campaign-${index}`,
@@ -115,9 +131,15 @@ const normalizeCampaignDetailInfo = (details, selectedCampaign) => {
   const startDateTime = campaign.startDateTime || selectedCampaign.startDateTime;
   const endDateTime = campaign.endDateTime || selectedCampaign.endDateTime;
   const status = campaign.status || selectedCampaign.campaignstatus;
-  const active = campaign.active ?? selectedCampaign.adstatus;
+  const active = campaign.active ?? campaign.Adstatus ?? campaign.adstatus ?? selectedCampaign.adstatus;
+  const tableId = campaign.tableId || campaign.TableID || campaign._id || selectedCampaign.tableId || "";
+  const cpcGoal = campaign.cpcGoal ?? campaign.averageCPC ?? selectedCampaign.cpcGoal ?? selectedCampaign.averageCPC ?? "";
+  const productId = parseProductIds(campaign.productId || selectedCampaign.productId || selectedCampaign.productIds);
 
   return {
+    tableId,
+    cpcGoal,
+    productId,
     title,
     campaignType,
     dailyBudget,
@@ -1009,6 +1031,71 @@ const AdvertisementPage = () => {
     }
   };
 
+  const openEditCampaign = useCallback(() => {
+    if (!selectedCampaign) {
+      showToast("Please select a campaign to edit.", "error");
+      return;
+    }
+
+    const isCampaignActive = resolveIsCampaignActive();
+
+    const resolvedTableId =
+      selectedCampaign.tableId ||
+      selectedCampaign.TableID ||
+      selectedCampaign._id ||
+      campaignDetailInfo?.tableId ||
+      "";
+
+    const resolvedCampaignId =
+      selectedCampaign.campaignId ||
+      selectedCampaign.CampaignID ||
+      selectedCampaign.campaignID ||
+      campaignDetailInfo?.campaignId ||
+      "";
+
+    if (!resolvedTableId || !resolvedCampaignId) {
+      showToast("Cannot edit campaign: missing campaign identifiers.", "error");
+      console.error("[CampaignEdit] Missing IDs before navigation:", {
+        selectedCampaign,
+        campaignDetailInfo,
+        resolvedTableId,
+        resolvedCampaignId
+      });
+      return;
+    }
+
+    const productIdsForEdit = parseProductIds(
+      campaignDetailInfo?.productId ||
+      selectedCampaign.productIds ||
+      selectedCampaign.productId
+    );
+
+    navigate("/advertisement/create-campaign", {
+      state: {
+        mode: "edit",
+        from: "advertisement-details",
+        editCampaign: {
+          tableId: resolvedTableId,
+          _id: resolvedTableId,
+          campaignId: resolvedCampaignId,
+          title: campaignDetailInfo?.campaignName || selectedCampaign.campaignName || selectedCampaign.title,
+          campaignType: campaignDetailInfo?.campaignType || selectedCampaign.campaignType || "Smart",
+          startDateTime: campaignDetailInfo?.startDateTime || campaignDetailInfo?.schedule || selectedCampaign.startDateTime || selectedCampaign.startDate,
+          endDateTime: campaignDetailInfo?.endDateTime || selectedCampaign.endDateTime || selectedCampaign.endDate,
+          dailyBudget: campaignDetailInfo?.dailyBudget || campaignDetailInfo?.budget || selectedCampaign.dailyBudget,
+          productIds: productIdsForEdit,
+          currentCampaignProducts: campaignProducts,
+          status: campaignDetailInfo?.status || selectedCampaign.status || selectedCampaign.campaignstatus || "Inactive",
+          campaignstatus: campaignDetailInfo?.status || selectedCampaign.status || selectedCampaign.campaignstatus || "Inactive",
+          adstatus: selectedCampaign.adstatus ?? selectedCampaign.adStatus ?? isCampaignActive,
+          active: isCampaignActive,
+          cpcGoal: campaignDetailInfo?.cpcGoal || selectedCampaign.cpcGoal || selectedCampaign.averageCPC || ""
+        }
+      }
+    });
+  }, [selectedCampaign, campaignDetailInfo, campaignProducts, navigate, resolveIsCampaignActive]);
+
+
   const handleDeleteCampaignFromDetails = async () => {
     if (!selectedCampaign) return;
     const id = selectedCampaign.campaignId;
@@ -1272,7 +1359,32 @@ const AdvertisementPage = () => {
           <div className="details-section-grid">
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
               <div className="details-card-box">
-                <h3>Campaign Settings</h3>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
+                  <h3 style={{ margin: 0 }}>Campaign Settings</h3>
+                  <button
+                    type="button"
+                    onClick={openEditCampaign}
+                    aria-label="Edit campaign"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "#2563eb",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      fontSize: "15px",
+                      lineHeight: 1,
+                      padding: "6px 4px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: "38px",
+                      opacity: 1,
+                      visibility: "visible"
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
                 <div className="info-field-row">
                   <span className="label">Campaign Name</span>
                   <span className="value">{campaignDetailInfo?.campaignName || selectedCampaign.campaignName}</span>
@@ -1494,7 +1606,7 @@ const AdvertisementPage = () => {
           <div className="ad-main-layout" style={{ display: "block" }}>
             <div className="ad-campaigns-list-card">
               {/* Search Input Bar */}
-              <div className="product-search-wrapper" style={{ maxWidth: "400px", marginBottom: "20px" }}>
+              <div className="product-search-wrapper ad-campaign-search-wrapper">
                 <Search size={16} className="search-icon" />
                 <input
                   type="text"
@@ -1816,26 +1928,7 @@ const AdvertisementPage = () => {
                       return;
                     }
 
-                    // Extract active value for the payload
-                    const isCampaignActive = resolveIsCampaignActive();
-
-                    // Navigate with location state
-                    navigate("/advertisement/create-campaign", {
-                      state: {
-                        editCampaign: {
-                          tableId: selectedCampaign.tableId ?? selectedCampaign.TableID ?? selectedCampaign._id ?? selectedCampaign.id,
-                          campaignId: selectedCampaign.campaignId ?? selectedCampaign.CampaignID ?? selectedCampaign.campaignID ?? selectedCampaign.id,
-                          title: campaignDetailInfo?.campaignName || selectedCampaign.campaignName || selectedCampaign.title,
-                          campaignType: campaignDetailInfo?.campaignType || selectedCampaign.campaignType || "Smart",
-                          startDateTime: campaignDetailInfo?.schedule || selectedCampaign.startDateTime || selectedCampaign.startDate,
-                          endDateTime: campaignDetailInfo?.endDateTime || selectedCampaign.endDateTime || selectedCampaign.endDate,
-                          dailyBudget: campaignDetailInfo?.budget ?? selectedCampaign.dailyBudget ?? 0,
-                          productIds: selectedCampaign.productIds || [],
-                          status: campaignDetailInfo?.status || selectedCampaign.status || "Pending",
-                          active: isCampaignActive
-                        }
-                      }
-                    });
+                    openEditCampaign();
                   }}
                   style={{
                     flex: 1,

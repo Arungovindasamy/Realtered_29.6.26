@@ -310,6 +310,37 @@ const getProductId = (product) =>
   product?.tableId ??
   "";
 
+
+const parseProductIds = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const normalizeProductList = (value) => {
+  if (!value) return [];
+  const arr = Array.isArray(value) ? value : (typeof value === "object" ? [value] : []);
+  const seen = new Set();
+
+  return arr
+    .map(normalizeProduct)
+    .filter((item) => {
+      const id = getProductId(item);
+      if (!id || seen.has(String(id))) return false;
+      seen.add(String(id));
+      return true;
+    });
+};
+
 const isOutOfStock = (product) => {
   const status = String(
     product?.status ??
@@ -450,28 +481,27 @@ const CreateCampaignPage = () => {
     if (isEditMode) {
       return Boolean(editCampaign?.endDateTime);
     }
-    return true;
+    return false;
   });
   const [endDate, setEndDate] = useState(() => {
     if (editCampaign?.endDateTime) {
       return parseDateTime(editCampaign.endDateTime).date;
     }
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().split("T")[0];
+    return "";
   });
   const [endTime, setEndTime] = useState(() => {
     if (editCampaign?.endDateTime) {
       return parseDateTime(editCampaign.endDateTime).time;
     }
-    return "22:00";
+    return "23:59";
   });
 
   const [cpcGoal, setCpcGoal] = useState(() => {
     if (isEditMode) {
-      return editCampaign?.cpcGoal !== undefined && editCampaign?.cpcGoal !== null ? String(editCampaign.cpcGoal) : "";
+      const editCpc = editCampaign?.cpcGoal ?? editCampaign?.averageCPC ?? "";
+      return editCpc !== undefined && editCpc !== null ? String(editCpc) : "";
     }
-    return "5";
+    return "";
   });
 
   const [selectedBudgetMode, setSelectedBudgetMode] = useState(() => {
@@ -632,18 +662,36 @@ const CreateCampaignPage = () => {
         console.log("[CampaignEdit] initial campaign:", editCampaign);
         console.log("[Advertisement] Selected Campaign", editCampaign);
 
-        // Fetch current campaign products
-        const campaignId = editCampaign.campaignId;
-        const campaignProductsResponse = await advertisementService.getCampaignProducts({ campaignId });
-        console.log("[CampaignProductsEdit] campaign products response:", campaignProductsResponse);
+        // Fetch current campaign products. If the API does not return data,
+        // fall back to products/productIds passed from Advertisement details.
+        const campaignId = editCampaign.campaignId || editCampaign.CampaignID || editCampaign.campaignID || "";
+        let prods = normalizeProductList(editCampaign.currentCampaignProducts || editCampaign.products || []);
 
-        const prods = (typeof extractCampaignProducts === "function" ? extractCampaignProducts(campaignProductsResponse) : null) || campaignProductsResponse?.products || campaignProductsResponse?.message?.products || [];
+        if (campaignId) {
+          try {
+            const campaignProductsResponse = await advertisementService.getCampaignProducts({ campaignId });
+            console.log("[CampaignProductsEdit] campaign products response:", campaignProductsResponse);
+
+            const apiProducts = (typeof extractCampaignProducts === "function" ? extractCampaignProducts(campaignProductsResponse) : null) ||
+              campaignProductsResponse?.products ||
+              campaignProductsResponse?.message?.products ||
+              campaignProductsResponse?.message ||
+              [];
+            prods = normalizeProductList(apiProducts).length ? normalizeProductList(apiProducts) : prods;
+          } catch (productErr) {
+            console.warn("[CampaignProductsEdit] Failed to fetch current products, using passed edit state:", productErr);
+          }
+        }
+
         setCurrentCampaignProducts(prods);
 
-        // Pre-select all current campaign products
-        const prodIds = Array.isArray(prods) ? prods.map(getProductId).filter(Boolean) : [];
+        // Pre-select all current campaign products. If the product API did not return products,
+        // still preserve productIds passed with the campaign so update does not lose products.
+        const prodIds = prods.length
+          ? prods.map(getProductId).filter(Boolean)
+          : parseProductIds(editCampaign.productIds || editCampaign.productId);
         setSelectedProductIds(prodIds);
-        setSelectedProducts(Array.isArray(prods) ? prods : []);
+        setSelectedProducts(prods);
       } else {
         // Generate default campaign name
         const defaultName = `New Smart Campaign ${getFormattedDateTime()}`;
@@ -795,7 +843,9 @@ const CreateCampaignPage = () => {
 
   const filteredNoCampaignProducts = useMemo(() => {
     const currentCampaignIds = new Set((currentCampaignProducts || []).map(getProductId).filter(Boolean));
-    return (groupedProducts.noCampaign || []).filter(p => !currentCampaignIds.has(getProductId(p)));
+    return (groupedProducts.noCampaign || [])
+      .filter(p => !currentCampaignIds.has(getProductId(p)))
+      .filter(p => isProductSelectable(p));
   }, [groupedProducts.noCampaign, currentCampaignProducts]);
 
   const filteredCampaignGroups = useMemo(() => {
@@ -1171,7 +1221,9 @@ const CreateCampaignPage = () => {
 
   // Final Submit Handler (Create or Update Campaign)
   const handleFinalSubmit = async () => {
-    const averageCPCValue = cpcGoal ? Number(cpcGoal) : 5;
+    const averageCPCValue = cpcGoal ? Number(cpcGoal) : null;
+    const fallbackCpcForPriority = averageCPCValue || 5;
+    const selectedProductIdString = selectedProductIds.map(String).join(",");
 
     const startDateTime = combineDateAndTime(startDate, startTime || "00:00");
 
@@ -1237,8 +1289,12 @@ const CreateCampaignPage = () => {
         startDateTime,
         endDateTime,
         dailyBudget: Number(dailyBudget),
-        cpcGoal: cpcGoal ? Number(cpcGoal) : null,
-        productId: selectedProductIds
+        cpcGoal: averageCPCValue,
+        averageCPC: averageCPCValue ?? undefined,
+        productId: selectedProductIdString,
+        campaignstatus: editCampaign.campaignstatus || editCampaign.status || "Inactive",
+        status: editCampaign.status || editCampaign.campaignstatus || "Inactive",
+        active: editCampaign.active ?? editCampaign.adstatus ?? editCampaign.adStatus ?? false
       };
 
       console.log("[CampaignUpdate] final payload:", payload);
@@ -1248,9 +1304,14 @@ const CreateCampaignPage = () => {
         console.log("[Advertisement] Update Response", response);
         console.log("[CampaignReview] update response:", response);
 
+        const responseMessageText =
+          typeof response?.message === "string"
+            ? response.message
+            : response?.message?.message || response?.message?.error || response?.data?.message || "";
+
         const isNotFoundError =
           response?.status === "error" &&
-          String(response?.message || response?.data?.message || "").includes("Campaign not found for given ID");
+          String(responseMessageText).includes("Campaign not found for given ID");
 
         if (isNotFoundError || response?.status === "error") {
           if (isNotFoundError) {
@@ -1261,7 +1322,7 @@ const CreateCampaignPage = () => {
               payload
             });
           }
-          throw new Error(response.message || "Failed to update campaign.");
+          throw new Error(responseMessageText || "Failed to update campaign.");
         }
 
         showToast("Campaign updated successfully!");
@@ -1293,13 +1354,14 @@ const CreateCampaignPage = () => {
       const payload = {
         sellerId,
         campaignType: campaignType || "Smart",
-        productId: selectedProductIds.map(String).join(","),
+        productId: selectedProductIdString,
         dailyBudget: Number(dailyBudget),
         startDateTime,
         endDateTime,
         title: campaignName.trim(),
-        priorityScore: calculatePriorityScore(dailyBudget, averageCPCValue),
-        averageCPC: averageCPCValue,
+        priorityScore: calculatePriorityScore(dailyBudget, fallbackCpcForPriority),
+        cpcGoal: averageCPCValue,
+        averageCPC: averageCPCValue ?? undefined,
         campaignstatus: "Active"
       };
 
@@ -1313,15 +1375,15 @@ const CreateCampaignPage = () => {
 
         console.log("[CampaignCreate] response:", response);
 
-        const isSuccess = response?.status === "success" && response?.message?.status === "Success";
+        const isSuccess = response?.status === "success";
 
         if (isSuccess) {
-          showToast(response.message.message || "Campaign created successfully");
+          showToast(response?.message?.message || response?.message || "Campaign created successfully");
           setTimeout(() => {
             navigate("/advertisement");
           }, 1500);
         } else if (response?.status === "error") {
-          const errMsg = response?.message?.message || response?.message?.error || "Failed to create campaign";
+          const errMsg = response?.message?.message || response?.message?.error || response?.message || "Failed to create campaign";
           showToast(errMsg, "error");
         } else {
           showToast("Campaign created successfully!");
@@ -1666,7 +1728,14 @@ const CreateCampaignPage = () => {
 
                 {/* 5. Daily Budget selector */}
                 <div className="form-group-section">
-                  <label className="section-label-main">Daily Budget</label>
+                  <label className="section-label-main">
+                    Daily Budget
+                    {isEditMode && editCampaign?.dailyBudget !== undefined && (
+                      <span style={{ marginLeft: "10px", color: "#ef4444", fontWeight: 700 }}>
+                        Current Daily Budget ₹{Number(editCampaign.dailyBudget || 0)}
+                      </span>
+                    )}
+                  </label>
                   <div className="budget-modes-selectors">
                     {/* Mode A: Preset option selection */}
                     <div
