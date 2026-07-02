@@ -3385,94 +3385,123 @@ export const uploadMediaFile = async (file) => {
   return url;
 };
 
+// Detail API Cache
+const haatzUpDetailCache = {};
+
 export const getSellerHaatzupProducts = async (sellerId, page = 1, limit = 15) => {
   const resolvedSellerId = getOrResolveSellerId(sellerId);
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] product selection API params:", { sellerId: resolvedSellerId, page, limit });
+  }
   try {
     const response = await axios.get(`${API_BASE_URL}/sellerhaatzupProducts`, {
       params: { sellerId: resolvedSellerId, page, limit },
       timeout: 15000,
     });
+    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+      console.log("[HaatzUp] product selection API response:", response.data);
+    }
     return response.data;
   } catch (err) {
-    const response = await axios.get(`${API_BASE_URL}/sellerCampaignsproducts`, {
-      params: { sellerId: resolvedSellerId, page, limit },
-      timeout: 15000,
-    });
-    return response.data;
+    console.warn("[sellerService] sellerhaatzupProducts error:", err?.message);
+    return { status: "success", message: { data: [] } };
   }
 };
 
 export const getSellerwiseHaatzUp = async (sellerId, page = 1, limit = 12) => {
   const resolvedSellerId = getOrResolveSellerId(sellerId);
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] sellerId used:", resolvedSellerId);
+    console.log("[HaatzUp] SellerwiseHaatzUp URL/params:", `${API_BASE_URL}/SellerwiseHaatzUp`, { sellerId: resolvedSellerId, page, limit });
+  }
   try {
     const response = await axios.get(`${API_BASE_URL}/SellerwiseHaatzUp`, {
       params: { sellerId: resolvedSellerId, page, limit },
       timeout: 15000,
     });
+    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+      console.log("[HaatzUp] SellerwiseHaatzUp response:", response.data);
+    }
     return response.data;
   } catch (err) {
     console.warn("[sellerService] SellerwiseHaatzUp error:", err?.message);
     if (err?.response?.status === 404) {
-      return { status: "success", data: [] };
+      return { status: "success", message: { data: [], pagination: { totalPages: 1, totalItems: 0, page: 1 } } };
     }
     throw err;
   }
 };
 
-export const uploadHaatzupVideo = async (payloadOrFormData, onUploadProgress = null) => {
-  const isFormData = typeof FormData !== "undefined" && payloadOrFormData instanceof FormData;
-  const config = {
-    headers: isFormData ? { "Content-Type": "multipart/form-data" } : { "Content-Type": "application/json" },
-    timeout: 60000,
-    onUploadProgress: onUploadProgress
-      ? (event) => {
-        const total = event.total || 1;
-        onUploadProgress(Math.round((event.loaded * 100) / total));
-      }
-      : undefined,
-  };
-  const response = await axios.post(`${API_BASE_URL}/uploadhaatzupVideo`, payloadOrFormData, config);
+export const uploadHaatzupVideo = async (payload) => {
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] uploadhaatzupVideo payload:", payload);
+  }
+  const response = await axios.post(`${API_BASE_URL}/uploadhaatzupVideo`, payload, {
+    headers: { "Content-Type": "application/json" },
+    timeout: 30000,
+  });
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] uploadhaatzupVideo response:", response.data);
+  }
   return response.data;
 };
 
-
-export const deleteHaatzupVideo = async (sellerId, videoId) => {
-  const resolvedSellerId = getOrResolveSellerId(sellerId);
+export const deleteHaatzupVideo = async (tableId) => {
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] deletehaatzupVideo payload:", { tableId });
+  }
   const response = await axios.post(`${API_BASE_URL}/deletehaatzupVideo`, {
-    sellerId: resolvedSellerId,
-    videoId,
+    tableId,
   }, {
     headers: { "Content-Type": "application/json" },
     timeout: 15000,
   });
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] deletehaatzupVideo response:", response.data);
+  }
   return response.data;
 };
 
-export const getSellerHaatzUpDetails = async (sellerId, videoId) => {
-  const resolvedSellerId = getOrResolveSellerId(sellerId);
+export const getSellerHaatzUpDetails = async (tableId) => {
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] sellerHaatzUpdetails tableId:", tableId);
+  }
+  if (tableId && haatzUpDetailCache[tableId]) {
+    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+      console.log("[HaatzUp] sellerHaatzUpdetails response (cached):", haatzUpDetailCache[tableId]);
+    }
+    return haatzUpDetailCache[tableId];
+  }
   const response = await axios.get(`${API_BASE_URL}/sellerHaatzUpdetails`, {
-    params: { sellerId: resolvedSellerId, videoId, tableId: videoId },
+    params: { tableId },
     timeout: 15000,
   });
+  if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    console.log("[HaatzUp] sellerHaatzUpdetails response:", response.data);
+  }
+  if (tableId && response.data) {
+    haatzUpDetailCache[tableId] = response.data;
+  }
   return response.data;
 };
 
-export const generateHashtags = async (sellerId, query) => {
-  const resolvedSellerId = getOrResolveSellerId(sellerId);
-  try {
-    const response = await axios.post(`${API_BASE_URL}/generateHashtags`, { sellerId: resolvedSellerId, query }, {
-      headers: { "Content-Type": "application/json" },
-      timeout: 15000
-    });
-    return response.data;
-  } catch (e) {
-    const response = await axios.get(`${API_BASE_URL}/generateHashtags`, {
-      params: { sellerId: resolvedSellerId, query },
-      timeout: 15000,
-    });
-    return response.data;
+export const generateHashtags = async (payload) => {
+  const resolvedSellerId = getOrResolveSellerId(payload?.sellerId);
+  const products = payload?.products || [];
+  const body = { sellerId: resolvedSellerId, products };
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[generateHashtags] payload:", body);
   }
+  const response = await axios.post(`${API_BASE_URL}/generateHashtags`, body, {
+    headers: { "Content-Type": "application/json" },
+    timeout: 15000
+  });
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[generateHashtags] response:", response.data);
+  }
+  return response.data;
 };
+
 
 export const getHaatzUpGuidelines = async () => ({
   status: "success",
@@ -3509,6 +3538,11 @@ export const getHaatzUpSummary = async (sellerId) => {
 export const getPromotionalVideos = getSellerwiseHaatzUp;
 export const getProductsForPromotion = getSellerHaatzupProducts;
 export const uploadHaatzUpReel = uploadHaatzupVideo;
+export const getPromoProducts = getSellerHaatzupProducts;
+export const sellerhaatzupProducts = getSellerHaatzupProducts;
+export const uploadHaatzUpVideo = uploadHaatzupVideo;
+export const getHaatzUpDetails = getSellerHaatzUpDetails;
+export const deleteHaatzUpVideo = deleteHaatzupVideo;
 
 export const CAMPAIGN_TYPE_OPTIONS = [
   {
@@ -4468,7 +4502,13 @@ export const haatzupService = {
   getPromotionalVideos,
   getHaatzUpGuidelines,
   getProductsForPromotion,
-  uploadHaatzUpReel
+  uploadHaatzUpReel,
+  getPromoProducts,
+  sellerhaatzupProducts,
+  generateHashtags,
+  uploadHaatzUpVideo,
+  getHaatzUpDetails,
+  deleteHaatzUpVideo
 };
 
 export {

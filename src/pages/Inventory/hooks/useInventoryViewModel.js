@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import sellerService, { resolveWixImage, resolveSellerId } from "../../../services/sellerService";
 
 const LIMIT = 10;
+const RECENT_UPDATE_TTL_MS = 5000;
 
 const parseNumber = (val) => {
   const parsed = Number(val);
@@ -11,18 +12,18 @@ const parseNumber = (val) => {
 const extractInventoryResponse = (response, fallbackPage, limit = LIMIT) => {
   const inventoryItems = response?.inventoryItems || response?.data?.inventoryItems || response?.message?.inventoryItems || [];
   const totalItems = response?.totalItems || response?.data?.totalItems || response?.message?.totalItems || inventoryItems.length;
-  
+
   const payload = response?.data ?? response ?? {};
   const source = payload?.message ?? payload;
   const currentPage = Number(source?.currentPage ?? source?.page ?? payload?.page ?? fallbackPage);
-  
+
   let totalPages = response?.totalPages || response?.data?.totalPages || response?.message?.totalPages;
   if (!totalPages) {
     totalPages = Math.max(1, Math.ceil(totalItems / limit));
   } else {
     totalPages = Number(totalPages);
   }
-  
+
   return { inventoryItems, totalItems, currentPage, totalPages };
 };
 
@@ -31,11 +32,11 @@ export const useInventoryViewModel = (sellerId) => {
   const inventory = inventoryItems;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   // Search state (raw input and debounced search term)
   const [searchRaw, setSearchRaw] = useState("");
   const [search, setSearch] = useState("");
-  
+
   // Pagination and filter states
   const [page, setPage] = useState(1);
 
@@ -50,6 +51,33 @@ export const useInventoryViewModel = (sellerId) => {
 
   const debounceRef = useRef(null);
   const isRefetchingRef = useRef(false);
+  const successTimerRef = useRef(null);
+
+  // Tracks rows we just updated locally so a stale backend refetch can't
+  // temporarily re-add them to the wrong status bucket (e.g. Out of Stock).
+  // Map key: `${productId}-${variantId}` -> { finalQty, timestamp }
+  const recentlyUpdatedRowsRef = useRef(new Map());
+
+  // Show success message and auto-dismiss after 3 seconds
+  const showSuccessMessage = (message) => {
+    setSuccessMessage(message);
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+    }
+    successTimerRef.current = setTimeout(() => {
+      setSuccessMessage(null);
+      successTimerRef.current = null;
+    }, 3000);
+  };
+
+  // Clear success message immediately (manual close) and cancel pending timer
+  const clearSuccessMessage = () => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
+    setSuccessMessage(null);
+  };
 
   // Debounced search handler
   const handleSearchChange = (val) => {
@@ -68,18 +96,18 @@ export const useInventoryViewModel = (sellerId) => {
     }
     setError(null);
     const resolvedSellerId = sellerId || resolveSellerId();
-    
+
     // TASK 14: Debug log - list request
     console.log("[Inventory] list request:", { sellerId: resolvedSellerId, page, searchText: search });
 
     try {
-      const response = await sellerService.getSellerProductInventory({ 
-        sellerId: resolvedSellerId, 
-        page, 
-        searchText: search, 
-        signal 
+      const response = await sellerService.getSellerProductInventory({
+        sellerId: resolvedSellerId,
+        page,
+        searchText: search,
+        signal
       });
-      
+
       // TASK 14: Debug log - list response
       console.log("[Inventory] list response:", response);
 
@@ -99,6 +127,37 @@ export const useInventoryViewModel = (sellerId) => {
         return values.length ? values.join(" / ") : "Default";
       };
 
+      // Clear out expired "recently updated" entries before applying overrides
+      const now = Date.now();
+      for (const [key, val] of recentlyUpdatedRowsRef.current.entries()) {
+        if (now - val.timestamp >= RECENT_UPDATE_TTL_MS) {
+          recentlyUpdatedRowsRef.current.delete(key);
+        }
+      }
+
+      // Applies a locally-known "just updated" quantity onto a freshly
+      // mapped row if the backend response still looks stale for it.
+      const applyRecentOverride = (mappedRow, rowKey) => {
+        const updated = recentlyUpdatedRowsRef.current.get(rowKey);
+        if (!updated) return mappedRow;
+        if (now - updated.timestamp >= RECENT_UPDATE_TTL_MS) return mappedRow;
+
+        if (Number(mappedRow.originalQuantity) !== Number(updated.finalQty)) {
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[Inventory] applying optimistic row override:", rowKey);
+          }
+          const finalQty = updated.finalQty;
+          const finalStatus = finalQty <= 0 ? "Out of Stock" : (finalQty <= 5 ? "Low Stock" : "In Stock");
+          mappedRow.originalQuantity = finalQty;
+          mappedRow.editedQuantity = finalQty;
+          mappedRow.stock = finalQty;
+          mappedRow.inStock = finalQty > 0;
+          mappedRow.status = finalStatus;
+          mappedRow.stockStatus = finalStatus;
+        }
+        return mappedRow;
+      };
+
       const rows = [];
       inventoryItemsResponse.forEach((item) => {
         const productId = item.productId;
@@ -115,12 +174,13 @@ export const useInventoryViewModel = (sellerId) => {
             item.stock ??
             0
           );
-          const inStock = item.stock?.inStock !== undefined 
-            ? item.stock.inStock 
+          const inStock = item.stock?.inStock !== undefined
+            ? item.stock.inStock
             : (item.inStock !== undefined ? item.inStock : qty > 0);
 
           const rowId = `${productId || externalId || "prod"}-${variantId}`;
-          rows.push({
+          const rowKey = `${productId}-${variantId}`;
+          let mappedRow = {
             rowId,
             id: rowId,
             productId: productId || "-",
@@ -138,7 +198,9 @@ export const useInventoryViewModel = (sellerId) => {
             variant: "Default",
             stock: qty,
             status: qty <= 0 ? "Out of Stock" : (qty <= 5 ? "Low Stock" : "In Stock")
-          });
+          };
+          mappedRow = applyRecentOverride(mappedRow, rowKey);
+          rows.push(mappedRow);
         } else {
           variants.forEach((variant) => {
             const variantId = variant.variantId || "00000000-0000-0000-0000-000000000000";
@@ -147,14 +209,15 @@ export const useInventoryViewModel = (sellerId) => {
               variant.quantity ??
               0
             );
-            const inStock = variant.stock?.inStock !== undefined 
-              ? variant.stock.inStock 
+            const inStock = variant.stock?.inStock !== undefined
+              ? variant.stock.inStock
               : (variant.inStock !== undefined ? variant.inStock : qty > 0);
-            
+
             const variantLabel = getVariantLabel(variant);
             const rowId = `${productId || externalId || "prod"}-${variantId}`;
+            const rowKey = `${productId}-${variantId}`;
 
-            rows.push({
+            let mappedRow = {
               rowId,
               id: rowId,
               productId: productId || "-",
@@ -172,13 +235,18 @@ export const useInventoryViewModel = (sellerId) => {
               variant: variantLabel,
               stock: qty,
               status: qty <= 0 ? "Out of Stock" : (qty <= 5 ? "Low Stock" : "In Stock")
-            });
+            };
+            mappedRow = applyRecentOverride(mappedRow, rowKey);
+            rows.push(mappedRow);
           });
         }
       });
 
       // TASK 14: Debug log - mapped rows
       console.log("[Inventory] mapped rows:", rows);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Inventory] recently updated rows:", recentlyUpdatedRowsRef.current);
+      }
 
       setInventoryItems(rows);
       setTotalItems(totalItemsVal);
@@ -217,6 +285,13 @@ export const useInventoryViewModel = (sellerId) => {
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  // Clean up success message timer on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
     };
   }, []);
 
@@ -259,18 +334,18 @@ export const useInventoryViewModel = (sellerId) => {
       prev.map((item) =>
         item.rowId === rowId || item.id === rowId
           ? {
-              ...item,
-              editedQuantity: quantity,
-              stock: quantity,
-              stockStatus:
-                quantity <= 0 ? "Out of Stock" :
+            ...item,
+            editedQuantity: quantity,
+            stock: quantity,
+            stockStatus:
+              quantity <= 0 ? "Out of Stock" :
                 quantity <= 5 ? "Low Stock" :
-                "In Stock",
-              status:
-                quantity <= 0 ? "Out of Stock" :
+                  "In Stock",
+            status:
+              quantity <= 0 ? "Out of Stock" :
                 quantity <= 5 ? "Low Stock" :
-                "In Stock"
-            }
+                  "In Stock"
+          }
           : item
       )
     );
@@ -411,6 +486,22 @@ export const useInventoryViewModel = (sellerId) => {
         throw new Error(errMsg);
       }
 
+      // Record the rows we just updated so a stale/early backend refetch
+      // can't temporarily re-add them to the wrong status bucket.
+      const updateTimestamp = Date.now();
+      changedRows.forEach((row) => {
+        const rowKey = `${row.productId}-${row.variantId}`;
+        recentlyUpdatedRowsRef.current.set(rowKey, {
+          productId: row.productId,
+          variantId: row.variantId,
+          finalQty: Number(row.editedQuantity ?? 0),
+          timestamp: updateTimestamp
+        });
+      });
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Inventory] recently updated rows:", recentlyUpdatedRowsRef.current);
+      }
+
       // TASK 9: Refresh after update (Optimistic UI update)
       setInventoryItems((prev) =>
         prev.map((row) => {
@@ -423,6 +514,7 @@ export const useInventoryViewModel = (sellerId) => {
           if (!changedRow) return row;
 
           const finalQty = changedRow.editedQuantity;
+          const finalStatus = finalQty <= 0 ? "Out of Stock" : (finalQty <= 5 ? "Low Stock" : "In Stock");
 
           return {
             ...row,
@@ -431,25 +523,29 @@ export const useInventoryViewModel = (sellerId) => {
             stock: finalQty,
             inventory: finalQty,
             availableStock: finalQty,
-            status: finalQty <= 0 ? "Out of Stock" : (finalQty <= 5 ? "Low Stock" : "In Stock"),
-            stockStatus: finalQty <= 0 ? "Out of Stock" : (finalQty <= 5 ? "Low Stock" : "In Stock")
+            inStock: finalQty > 0,
+            status: finalStatus,
+            stockStatus: finalStatus
           };
         })
       );
 
       // Successfully updated all changes
-      setSuccessMessage("Inventory updated successfully.");
+      showSuccessMessage("Inventory updated successfully.");
       isRefetchingRef.current = true;
       setShowConfirmation(false);
 
-      // Silent backend sync to prevent manual refresh
+      // Silent backend sync to prevent manual refresh.
+      // Timings pushed out slightly (800ms / 2000ms) to reduce the chance
+      // of the backend/Wix inventory not having propagated yet, which was
+      // causing a stale Out of Stock row to flicker back in.
       setTimeout(() => {
         loadInventory(null, true);
-      }, 300);
+      }, 800);
 
       setTimeout(() => {
         loadInventory(null, true);
-      }, 1200);
+      }, 2000);
     } catch (err) {
       console.error("[useInventoryViewModel] Batch update failed:", err);
       setError(err.message || "Failed to update some inventory items.");
@@ -510,14 +606,14 @@ export const useInventoryViewModel = (sellerId) => {
     totalPages,
     totalItems,
     limit: LIMIT,
-    
+
     // Batch updates
     changedRows,
     showConfirmation,
     setShowConfirmation,
     updating,
     successMessage,
-    setSuccessMessage,
+    setSuccessMessage: clearSuccessMessage,
     handleUpdateInventory,
     totalProduct,
     totalVariant

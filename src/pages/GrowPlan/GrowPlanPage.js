@@ -115,10 +115,10 @@ const normalize = (value) =>
 const parseDateSafe = (dateVal) => {
   if (!dateVal) return null;
   if (dateVal instanceof Date) return dateVal;
-  
+
   let d = new Date(dateVal);
   if (!isNaN(d.getTime())) return d;
-  
+
   if (typeof dateVal === 'string') {
     const parts = dateVal.split('-');
     if (parts.length === 3) {
@@ -148,13 +148,13 @@ const formatPlanDate = (dateValue) => {
 
 const getLatestSubscription = (orders) => {
   if (!Array.isArray(orders) || orders.length === 0) return null;
-  
+
   const parseDate = (val) => {
     if (!val) return 0;
     const dateObj = parseDateSafe(val);
     return dateObj ? dateObj.getTime() : 0;
   };
-  
+
   const getSubTimestamp = (sub) => {
     const created = sub.createdDate || sub.createdAt || sub._createdDate || sub._createdAt;
     if (created) {
@@ -255,23 +255,23 @@ const getDurationMonths = (duration) => {
 
 const calculateRemainingAmount = (subscription) => {
   if (!subscription) return 0;
-  
+
   const start = parseDateSafe(subscription.startedDate || subscription.startDate);
   const end = parseDateSafe(subscription.endedDate || subscription.endDate);
   const now = new Date();
-  
+
   if (!start || !end || now >= end || now < start) {
     return 0;
   }
-  
+
   const totalDuration = end.getTime() - start.getTime();
   const remainingDuration = end.getTime() - now.getTime();
-  
+
   if (totalDuration <= 0 || remainingDuration <= 0) return 0;
-  
+
   const originalAmount = Number(subscription.amount || subscription.price || 0);
   const remainingValue = (originalAmount * remainingDuration) / totalDuration;
-  
+
   return Math.max(0, Math.round(remainingValue));
 };
 
@@ -285,7 +285,7 @@ const GrowPlanPage = () => {
   const [viewState, setViewState] = useState("plans");
   const [plans, setPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [isFeaturesExpanded, setIsFeaturesExpanded] = useState(false);
+  const [expandedPlans, setExpandedPlans] = useState({});
 
   // Mobile-Aligned States
   const [currentSubscription, setCurrentSubscription] = useState(null);
@@ -385,7 +385,7 @@ const GrowPlanPage = () => {
     };
     console.log("[GrowPlan] Selected Plan", storedPlan);
     setSelectedPlan(storedPlan);
-    setIsFeaturesExpanded(false);
+    //setIsFeaturesExpanded(false);
   };
 
   // Fetch plans, wallet balance, and active subscription on mount
@@ -552,9 +552,9 @@ const GrowPlanPage = () => {
 
     // 3. remainingAmount
     let remainingVal = 0;
-    const isUpgrade = currentSubscription && 
+    const isUpgrade = currentSubscription &&
       normalize(selectedPlan.name) !== normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
-    
+
     const oldExpiry = currentSubscription ? parseDateSafe(
       currentSubscription.endDate ||
       currentSubscription.endedDate ||
@@ -584,14 +584,14 @@ const GrowPlanPage = () => {
 
     // 6. startedDate and endedDate
     let startD = new Date();
-    const isRenew = currentSubscription && 
+    const isRenew = currentSubscription &&
       normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
-    
+
     if (isRenew && isOldActive) {
       startD = new Date(oldExpiry.getTime());
       startD.setDate(startD.getDate() + 1);
     }
-    
+
     const startIso = startD.toISOString().split('.')[0] + 'Z';
     setStartedDate(startIso);
 
@@ -695,13 +695,13 @@ const GrowPlanPage = () => {
 
       // Otherwise, proceed with Razorpay payment
       setProcessingMessage("Creating payment order...");
-      
+
       const createOrderPayload = {
         amount: Math.round(totalPayableAmount),
         currency: "INR",
         receipt: `rcpt_${Date.now()}`
       };
-      
+
       console.log("[GrowPlan] createRazorpayOrder payload:", createOrderPayload);
       const orderRes = await sellerService.createRazorpayOrder(createOrderPayload);
       console.log("[GrowPlan] Razorpay order response:", orderRes);
@@ -728,7 +728,7 @@ const GrowPlanPage = () => {
         description: sellerId,
         handler: async function (razorpayResponse) {
           console.log("[GrowPlan] Razorpay Success Response:", razorpayResponse);
-          
+
           setPaymentStatus("updating_subscription");
           setViewState("success");
           setProcessingMessage("Verifying payment...");
@@ -837,11 +837,11 @@ const GrowPlanPage = () => {
       };
 
       // Determine tableId and subscription update mode
-      const isRenew = currentSubscription && 
+      const isRenew = currentSubscription &&
         normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
-      
+
       const isUpgrade = currentSubscription && !isRenew;
-      
+
       const oldExpiry = currentSubscription ? parseDateSafe(
         currentSubscription.endDate ||
         currentSubscription.endedDate ||
@@ -886,7 +886,7 @@ const GrowPlanPage = () => {
 
       // Build subscription payload
       const subPayload = {
-        tableId: (isRenew || (isUpgrade && isSameStartDate)) 
+        tableId: (isRenew || (isUpgrade && isSameStartDate))
           ? (currentSubscription.TableID || currentSubscription.tableId || currentSubscription._id || "")
           : "",
         planName: selectedPlan.name,
@@ -917,7 +917,7 @@ const GrowPlanPage = () => {
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
 
-      const success = storeRes?.status === "success" && 
+      const success = storeRes?.status === "success" &&
         storeRes?.message?.message === "Subscription order processed successfully";
 
       if (!success) {
@@ -1012,7 +1012,11 @@ const GrowPlanPage = () => {
       <div className="plans-list">
         {plans.map((plan) => {
           const isSelected = selectedPlan?.id === plan.id;
-          const featuresToShow = isFeaturesExpanded
+          //const featuresToShow = isFeaturesExpanded
+          //  ? plan.features
+          //  : plan.features?.slice(0, 5);
+          const isExpanded = !!expandedPlans[plan.id];
+          const featuresToShow = isExpanded
             ? plan.features
             : plan.features?.slice(0, 5);
           const hasLongFeatures = plan.features?.length > 5;
@@ -1052,7 +1056,7 @@ const GrowPlanPage = () => {
 
 
 
-              {isSelected && (
+              {/* {isSelected && (
                 <div className="plan-expanded-details">
                   <div className="plan-divider" />
                   <div className="plan-features-title">What's included:</div>
@@ -1076,7 +1080,34 @@ const GrowPlanPage = () => {
                     </button>
                   )}
                 </div>
-              )}
+              )} */}
+
+              <div className="plan-expanded-details">
+                <div className="plan-divider" />
+                <div className="plan-features-title">What's included:</div>
+                <ul className="plan-features-list">
+                  {featuresToShow?.map((feat, idx) => (
+                    <li className="plan-feature-item" key={idx}>
+                      <CheckCircle2 size={16} className="feature-check-icon" />
+                      <span>{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+                {hasLongFeatures && (
+                  <button
+                    className="btn-see-more-toggle"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedPlans((prev) => ({
+                        ...prev,
+                        [plan.id]: !prev[plan.id]
+                      }));
+                    }}
+                  >
+                    {isExpanded ? "See less" : "See more"}
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

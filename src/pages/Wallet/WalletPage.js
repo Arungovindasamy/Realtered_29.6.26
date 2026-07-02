@@ -764,9 +764,9 @@ const WalletPage = () => {
                                                 <span className="tx-type-text">{t.type}</span>
                                             </div>
                                             <div className="tx-col-right">
-                        <span className={`tx-amount-text ${t.isCredit ? "credit" : "spend"}`}>
-                          ₹{t.amount.toFixed(2)}
-                        </span>
+                                                <span className={`tx-amount-text ${t.isCredit ? "credit" : "spend"}`}>
+                                                    ₹{t.amount.toFixed(2)}
+                                                </span>
                                             </div>
                                         </div>
                                     ))
@@ -783,19 +783,8 @@ const WalletPage = () => {
                                     </div>
                                 ) : (
                                     <div className="campaign-summary-container">
-                                        <div className="transaction-item-row" style={{ borderBottom: "1px solid #eee", paddingBottom: "12px", marginBottom: "12px" }}>
-                                            <div className="tx-col-left">
-                                                <span className="tx-type-text" style={{ fontSize: "16px", fontWeight: "600" }}>Total Campaign Spend</span>
-                                            </div>
-                                            <div className="tx-col-right">
-                        <span className="tx-amount-text spend" style={{ fontSize: "18px", fontWeight: "700", color: "#e53935" }}>
-                          ₹{Number(campaignSummary?.data?.totalSpend || 0).toFixed(2)}
-                        </span>
-                                            </div>
-                                        </div>
-
-                                        <div style={{ marginTop: "24px", borderTop: "1px solid #eee", paddingTop: "24px" }}>
-                                            <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "16px", color: "#333" }}>
+                                        <div className="campaign-spend-history-section">
+                                            <h3 className="campaign-spend-history-title">
                                                 Campaign Spend History
                                             </h3>
 
@@ -816,9 +805,9 @@ const WalletPage = () => {
                                                             <span className="tx-type-text">Campaign Spend</span>
                                                         </div>
                                                         <div className="tx-col-right">
-                              <span className="tx-amount-text spend">
-                                ₹{Number(c.amount || 0).toFixed(2)}
-                              </span>
+                                                            <span className="tx-amount-text spend">
+                                                                ₹{Number(c.amount || 0).toFixed(2)}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 ))

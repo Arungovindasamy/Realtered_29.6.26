@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { 
-  Search, 
-  RefreshCw, 
-  Plus, 
-  X, 
-  ChevronLeft, 
-  ChevronRight, 
-  AlertCircle, 
-  CheckCircle2, 
+import {
+  Search,
+  RefreshCw,
+  Plus,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  AlertCircle,
+  CheckCircle2,
   MessageSquare,
   Clock,
   Video,
@@ -27,7 +27,7 @@ const formatApiDate = (date) => {
 
 const getDefaultTicketDateRange = () => {
   const today = new Date();
-  const from  = new Date(today);
+  const from = new Date(today);
   from.setDate(today.getDate() - 60);
   return { fromDate: formatApiDate(from), toDate: formatApiDate(today) };
 };
@@ -35,13 +35,13 @@ const getDefaultTicketDateRange = () => {
 // ── assignedTo logic ─────────────────────────────────────────────────────────
 const resolveAssignedTeam = (category) => {
   const cat = String(category || "").toLowerCase();
-  if (cat === "payment" || cat === "refund")           return "Billing Team";
-  if (cat === "shipping")                              return "Logistic Team";
+  if (cat === "payment" || cat === "refund") return "Billing Team";
+  if (cat === "shipping") return "Logistic Team";
   return "Support Team"; // Order, Product Enquire, Seller Training, Other, default
 };
 
 const HelpPage = () => {
-  const sellerId   = getSellerId();
+  const sellerId = getSellerId();
   const sellerEmail = (resolveSellerEmail() || "").trim();
 
   const [activeTab, setActiveTab] = useState("tickets"); // "tickets" | "tutorials"
@@ -55,13 +55,13 @@ const HelpPage = () => {
   const [tutorials, setTutorials] = useState([]);
   const [tutorialsLoading, setTutorialsLoading] = useState(false);
   const [tutorialsError, setTutorialsError] = useState(null);
-  
+
   // Search & Filters state
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("date-desc");
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
@@ -228,7 +228,7 @@ const HelpPage = () => {
 
       showToast("Ticket created successfully!");
       setIsCreateModalOpen(false);
-      
+
       setFormSubject("");
       setFormCategory("Order");
       setFormPriority("Medium");
@@ -246,11 +246,11 @@ const HelpPage = () => {
   // Filters logic
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
-      const matchesSearch = 
-        t.subject.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      const matchesSearch =
+        t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.description.toLowerCase().includes(searchQuery.toLowerCase());
-        
+
       const matchesStatus = statusFilter === "all" || t.status.toLowerCase() === statusFilter.toLowerCase();
       const matchesPriority = priorityFilter === "all" || t.priority.toLowerCase() === priorityFilter.toLowerCase();
 
@@ -302,7 +302,7 @@ const HelpPage = () => {
           <h1 className="help-page-title">{activeTab === "tickets" ? "My Tickets" : "Help & Tutorials"}</h1>
         </div>
         {activeTab === "tickets" && (
-          <button 
+          <button
             className="btn-create-ticket-main"
             onClick={() => setIsCreateModalOpen(true)}
           >
@@ -314,7 +314,7 @@ const HelpPage = () => {
 
       {/* Tabs for Tickets vs Tutorials */}
       <div className="help-tabs-container">
-        <button 
+        <button
           className={`help-tab-btn ${activeTab === "tickets" ? "active" : ""}`}
           onClick={() => {
             setActiveTab("tickets");
@@ -323,7 +323,7 @@ const HelpPage = () => {
         >
           Support Tickets
         </button>
-        <button 
+        <button
           className={`help-tab-btn ${activeTab === "tutorials" ? "active" : ""}`}
           onClick={() => {
             setActiveTab("tutorials");
@@ -361,7 +361,7 @@ const HelpPage = () => {
                   </div>
                   <h3>No Tickets Found</h3>
                   <p>You have not created any support tickets yet. Create a new ticket to get assistance from our support team.</p>
-                  <button 
+                  <button
                     className="btn-empty-create"
                     onClick={() => setIsCreateModalOpen(true)}
                   >
@@ -436,7 +436,7 @@ const HelpPage = () => {
                       </select>
                     </div>
 
-                    <button 
+                    <button
                       className="btn-toolbar-refresh"
                       onClick={fetchTickets}
                       title="Refresh tickets logs"
@@ -489,7 +489,7 @@ const HelpPage = () => {
                             </td>
                             <td className="text-muted text-sm">{formatDate(t.createdDate)}</td>
                             <td className="text-right">
-                              <button 
+                              <button
                                 className="btn-table-view"
                                 onClick={() => setSelectedTicket(t)}
                               >
@@ -575,18 +575,18 @@ const HelpPage = () => {
                     <div key={item.id || item._id || idx} className="tutorial-card">
                       {isVideo ? (
                         <div className="tutorial-media-wrapper">
-                          <img 
-                            src={thumbnail} 
-                            alt={title} 
-                            className="tutorial-video-thumbnail" 
+                          <img
+                            src={thumbnail}
+                            alt={title}
+                            className="tutorial-video-thumbnail"
                             onError={(e) => {
                               e.target.src = "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=500&auto=format&fit=crop";
                             }}
                           />
-                          <a 
-                            href={mediaUrl || docUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
+                          <a
+                            href={mediaUrl || docUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="tutorial-video-play-btn"
                             title="Watch video tutorial"
                           >
@@ -601,10 +601,10 @@ const HelpPage = () => {
                       <div className="tutorial-card-body">
                         <h3 className="tutorial-card-title">{title}</h3>
                         <p className="tutorial-card-desc">{desc}</p>
-                        <a 
-                          href={mediaUrl || docUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
+                        <a
+                          href={mediaUrl || docUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="tutorial-card-btn"
                         >
                           {isVideo ? "Watch Tutorial" : "Read Article"}
@@ -625,9 +625,9 @@ const HelpPage = () => {
           <div className="help-ticket-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Create a New Ticket</h3>
-              <button 
-                type="button" 
-                className="btn-modal-close" 
+              <button
+                type="button"
+                className="btn-modal-close"
                 onClick={() => setIsCreateModalOpen(false)}
                 disabled={submitting}
               >
@@ -735,9 +735,9 @@ const HelpPage = () => {
                 <span className="ticket-id-badge">{selectedTicket.id}</span>
                 <h3>Ticket Details</h3>
               </div>
-              <button 
-                type="button" 
-                className="btn-modal-close" 
+              <button
+                type="button"
+                className="btn-modal-close"
                 onClick={() => setSelectedTicket(null)}
               >
                 <X size={20} />
@@ -799,10 +799,10 @@ const HelpPage = () => {
               </div>
             </div>
 
-            <div className="modal-actions-footer">
+            <div className="ticket-detail-modal-footer">
               <button
                 type="button"
-                className="btn-form-cancel"
+                className="btn-close-view"
                 onClick={() => setSelectedTicket(null)}
               >
                 Close View

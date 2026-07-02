@@ -108,7 +108,7 @@ const extractCampaignProducts = (response) => {
 
 const normalizeCampaignDetailInfo = (details, selectedCampaign) => {
   const campaign = details?.campaign || {};
-  
+
   const title = campaign.title || selectedCampaign.title;
   const campaignType = campaign.campaignType || selectedCampaign.campaignType;
   const dailyBudget = campaign.dailyBudget || selectedCampaign.dailyBudget;
@@ -402,7 +402,7 @@ const calculateMetricsForRange = (detailsOrRows, performanceRows) => {
   }
 
   const dataSrc = details?.data ?? details ?? {};
-  
+
   const reachVal = pickMetric(dataSrc, ["reach", "totalReach", "reachCount"]);
   const reach = reachVal !== undefined ? Number(reachVal) : (rows.length ? sumByKeys(rows, ["reach", "totalReach", "reachCount"]) : 0);
 
@@ -548,7 +548,7 @@ const SingleMonthCalendar = ({ fromDate, toDate, onChange, onSelectPreset }) => 
     if (dateObj > realToday) return;
 
     const clickedStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-    
+
     if (!fromDate || (fromDate && toDate) || clickedStr < fromDate) {
       onChange(clickedStr, "");
     } else {
@@ -615,7 +615,7 @@ const SingleMonthCalendar = ({ fromDate, toDate, onChange, onSelectPreset }) => 
             dateObj.setHours(0, 0, 0, 0);
             const isFuture = dateObj > realToday;
             const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-            
+
             const isFrom = fromDate === dateStr;
             const isTo = toDate === dateStr;
             const isInRange = fromDate && toDate && dateStr > fromDate && dateStr < toDate;
@@ -716,6 +716,7 @@ const AdvertisementPage = () => {
   // Date filter inside Details View
   const [showDateFilterModal, setShowDateFilterModal] = useState(false);
   const [showEditConfirmModal, setShowEditConfirmModal] = useState(false);
+  const [confirmModalType, setConfirmModalType] = useState("start"); // "start" | "stop"
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("thisMonth");
   const [tempSelectedFilter, setTempSelectedFilter] = useState("thisMonth");
@@ -753,7 +754,7 @@ const AdvertisementPage = () => {
     const params = { sellerId };
 
     try {
-      const response = advertisementService.getSellerCampaigns 
+      const response = advertisementService.getSellerCampaigns
         ? await advertisementService.getSellerCampaigns(params)
         : await advertisementService.getCampaigns(sellerId);
 
@@ -845,7 +846,7 @@ const AdvertisementPage = () => {
     }
     const fromDate = formatDateString(fromDateObj);
     const toDate = formatDateString(toDateObj);
-    
+
     // Resolve IDs
     const tableId = campaign.tableId;
     const campaignId = campaign.campaignId;
@@ -952,7 +953,61 @@ const AdvertisementPage = () => {
     setSelectedCampaign(campaign);
   };
 
+  // Resolve whether the current campaign is active/running
+  const resolveIsCampaignActive = useCallback(() => {
+    if (campaignDetailInfo && campaignDetailInfo.active !== undefined) {
+      return campaignDetailInfo.active === true || String(campaignDetailInfo.active).toLowerCase() === "active" || campaignDetailInfo.active === "true";
+    }
+    const activeVal = selectedCampaign?.active ?? selectedCampaign?.adStatus ?? selectedCampaign?.Adstatus ?? selectedCampaign?.status;
+    if (activeVal === undefined || activeVal === null) return false;
+    return activeVal === true || String(activeVal).toLowerCase() === "active" || activeVal === "true";
+  }, [campaignDetailInfo, selectedCampaign]);
 
+  // Stop (turn OFF) the currently selected campaign using existing off-campaign API
+  const handleStopCampaign = async () => {
+    if (!selectedCampaign) return;
+    const id = selectedCampaign.campaignId;
+    const tableId = selectedCampaign.tableId;
+
+    setActionLoadingId(id);
+    try {
+      const stopPayload = {
+        _id: tableId,
+        status: "Inactive",
+        active: false
+      };
+      console.log("[CampaignStop] stopping campaign payload:", stopPayload);
+      const stopResponse = await advertisementService.offSellerCampaign(stopPayload);
+      console.log("[CampaignStop] offSellerCampaign response:", stopResponse);
+
+      const isStopSuccess = stopResponse?.status === "success";
+
+      if (isStopSuccess) {
+        showToast("Campaign stopped successfully", "success");
+        setCampaignDetailInfo((prev) => (prev ? { ...prev, active: false, status: "Inactive" } : prev));
+        setSelectedCampaign((prev) =>
+          prev
+            ? { ...prev, adstatus: false, adStatus: false, active: false, status: "Inactive", campaignstatus: "Inactive" }
+            : prev
+        );
+        setCampaigns((prev) =>
+          prev.map((c) =>
+            c.campaignId === id
+              ? { ...c, adstatus: false, adStatus: false, active: false, status: "Inactive", campaignstatus: "Inactive" }
+              : c
+          )
+        );
+      } else {
+        const stopError = stopResponse?.message?.error || stopResponse?.message?.message || "Failed to stop campaign.";
+        showToast(stopError, "error");
+      }
+    } catch (err) {
+      console.error("Error in offSellerCampaign step:", err);
+      showToast(err.message || "Failed to stop campaign.", "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   const handleDeleteCampaignFromDetails = async () => {
     if (!selectedCampaign) return;
@@ -1087,36 +1142,21 @@ const AdvertisementPage = () => {
                 Campaign ID: {selectedCampaign.campaignId}
               </span>
             </div>
-            
+
             <div className="details-header-actions">
               <div className="toggle-switch-container" onClick={() => {
                 console.log("[CampaignDetails] toggle clicked:", selectedCampaign);
+                const isCampaignActive = resolveIsCampaignActive();
+                setConfirmModalType(isCampaignActive ? "stop" : "start");
                 setShowEditConfirmModal(true);
               }}>
                 <span className="toggle-switch-label">
                   {(() => {
-                    const isCampaignActive = (() => {
-                      if (campaignDetailInfo && campaignDetailInfo.active !== undefined) {
-                        return campaignDetailInfo.active === true || String(campaignDetailInfo.active).toLowerCase() === "active" || campaignDetailInfo.active === "true";
-                      }
-                      const activeVal = selectedCampaign?.active ?? selectedCampaign?.adStatus ?? selectedCampaign?.Adstatus ?? selectedCampaign?.status;
-                      if (activeVal === undefined || activeVal === null) return false;
-                      return activeVal === true || String(activeVal).toLowerCase() === "active" || activeVal === "true";
-                    })();
+                    const isCampaignActive = resolveIsCampaignActive();
                     return isCampaignActive ? "Running" : "Paused";
                   })()}
                 </span>
-                <div className={`toggle-switch ${(() => {
-                  const isCampaignActive = (() => {
-                    if (campaignDetailInfo && campaignDetailInfo.active !== undefined) {
-                      return campaignDetailInfo.active === true || String(campaignDetailInfo.active).toLowerCase() === "active" || campaignDetailInfo.active === "true";
-                    }
-                    const activeVal = selectedCampaign?.active ?? selectedCampaign?.adStatus ?? selectedCampaign?.Adstatus ?? selectedCampaign?.status;
-                    if (activeVal === undefined || activeVal === null) return false;
-                    return activeVal === true || String(activeVal).toLowerCase() === "active" || activeVal === "true";
-                  })();
-                  return isCampaignActive;
-                })() ? "active" : ""}`}>
+                <div className={`toggle-switch ${resolveIsCampaignActive() ? "active" : ""}`}>
                   <div className="toggle-switch-handle" />
                 </div>
               </div>
@@ -1188,43 +1228,43 @@ const AdvertisementPage = () => {
                         : "--"}
                     </div>
                   </div>
+
+                  {metricsExpanded && (
+                    <>
+                      <div className="results-metric-item">
+                        <div className="label">Clicks</div>
+                        <div className="value">
+                          {campaignDetailsData?.metrics?.clicks !== null && campaignDetailsData?.metrics?.clicks !== undefined
+                            ? campaignDetailsData.metrics.clicks.toLocaleString()
+                            : "--"}
+                        </div>
+                      </div>
+                      <div className="results-metric-item">
+                        <div className="label">Sales</div>
+                        <div className="value">
+                          {campaignDetailsData?.metrics?.sales !== null && campaignDetailsData?.metrics?.sales !== undefined
+                            ? campaignDetailsData.metrics.sales.toLocaleString()
+                            : "--"}
+                        </div>
+                      </div>
+                      <div className="results-metric-item">
+                        <div className="label">Revenue</div>
+                        <div className="value">
+                          {campaignDetailsData?.metrics?.revenue !== null && campaignDetailsData?.metrics?.revenue !== undefined
+                            ? `₹${campaignDetailsData.metrics.revenue.toLocaleString()}`
+                            : "--"}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-                
+
                 <div className="see-more-toggle-row">
                   <button className="btn-see-more-toggle" onClick={() => setMetricsExpanded(!metricsExpanded)}>
                     <span>{metricsExpanded ? "See Less" : "See More"}</span>
                     <ChevronDown size={14} style={{ transform: metricsExpanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }} />
                   </button>
                 </div>
-                
-                {metricsExpanded && (
-                  <div className="results-metrics-grid" style={{ marginTop: "16px", borderTop: "1px solid #f1f5f9", paddingTop: "16px" }}>
-                    <div className="results-metric-item">
-                      <div className="label">Clicks</div>
-                      <div className="value">
-                        {campaignDetailsData?.metrics?.clicks !== null && campaignDetailsData?.metrics?.clicks !== undefined
-                          ? campaignDetailsData.metrics.clicks.toLocaleString()
-                          : "--"}
-                      </div>
-                    </div>
-                    <div className="results-metric-item">
-                      <div className="label">Sales</div>
-                      <div className="value">
-                        {campaignDetailsData?.metrics?.sales !== null && campaignDetailsData?.metrics?.sales !== undefined
-                          ? campaignDetailsData.metrics.sales.toLocaleString()
-                          : "--"}
-                      </div>
-                    </div>
-                    <div className="results-metric-item">
-                      <div className="label">Revenue</div>
-                      <div className="value">
-                        {campaignDetailsData?.metrics?.revenue !== null && campaignDetailsData?.metrics?.revenue !== undefined
-                          ? `₹${campaignDetailsData.metrics.revenue.toLocaleString()}`
-                          : "--"}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </>
             )}
           </div>
@@ -1291,7 +1331,7 @@ const AdvertisementPage = () => {
                     {(() => {
                       const trend = campaignDetailsData.trend;
                       const maxTotal = Math.max(...trend.map(d => d.reach + d.impressions + d.clicks), 10);
-                      
+
                       let yMax = 50;
                       if (maxTotal > 250) {
                         yMax = Math.ceil(maxTotal / 100) * 100;
@@ -1365,7 +1405,7 @@ const AdvertisementPage = () => {
                         </div>
                       );
                     })()}
-                    
+
                     <div className="chart-legend-row">
                       <div className="legend-item">
                         <div className="legend-icon reach">
@@ -1429,17 +1469,6 @@ const AdvertisementPage = () => {
               </div>
             </div>
           </div>
-
-          <div className="details-delete-row">
-            <button
-              className="btn-delete-campaign-details"
-              onClick={() => setShowDeleteConfirmModal(true)}
-              disabled={actionLoadingId !== null}
-            >
-              <Trash2 size={16} />
-              <span>{actionLoadingId === selectedCampaign.campaignId ? "Deleting..." : "Delete Campaign"}</span>
-            </button>
-          </div>
         </div>
       ) : (
         <>
@@ -1463,88 +1492,88 @@ const AdvertisementPage = () => {
           </div>
 
           <div className="ad-main-layout" style={{ display: "block" }}>
-          <div className="ad-campaigns-list-card">
-            {/* Search Input Bar */}
-            <div className="product-search-wrapper" style={{ maxWidth: "400px", marginBottom: "20px" }}>
-              <Search size={16} className="search-icon" />
-              <input
-                type="text"
-                placeholder="Search Campaign"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="search-product-input"
-              />
-            </div>
+            <div className="ad-campaigns-list-card">
+              {/* Search Input Bar */}
+              <div className="product-search-wrapper" style={{ maxWidth: "400px", marginBottom: "20px" }}>
+                <Search size={16} className="search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search Campaign"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="search-product-input"
+                />
+              </div>
 
-            <div className="table-wrapper-horizontal">
-              {filteredCampaigns.length === 0 ? (
-                <div className="campaigns-empty-view">
-                  <TrendingUp size={40} className="empty-chart-icon" />
-                  <h4>No Campaigns Found</h4>
-                  <p>Drive more traffic to your listings by launching your first campaign today.</p>
-                  <button
-                    className="btn-create-campaign-inline"
-                    onClick={() => navigate("/advertisement/create-campaign")}
-                  >
-                    New Campaign
-                  </button>
-                </div>
-              ) : (
-                <table className="campaigns-desktop-table">
-                  <thead>
-                    <tr>
-                      <th>Campaign Name</th>
-                      <th>Campaign ID</th>
-                      <th>Campaign Type</th>
-                      <th>Status</th>
-                      <th>Start Date/Time</th>
-                      <th>Budget</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCampaigns.map((c) => {
-                      const id = c.campaignId || c.id;
-                      const statusClass = String(c.status || "active").toLowerCase().replace(/\s+/g, "-");
+              <div className="table-wrapper-horizontal">
+                {filteredCampaigns.length === 0 ? (
+                  <div className="campaigns-empty-view">
+                    <TrendingUp size={40} className="empty-chart-icon" />
+                    <h4>No Campaigns Found</h4>
+                    <p>Drive more traffic to your listings by launching your first campaign today.</p>
+                    <button
+                      className="btn-create-campaign-inline"
+                      onClick={() => navigate("/advertisement/create-campaign")}
+                    >
+                      New Campaign
+                    </button>
+                  </div>
+                ) : (
+                  <table className="campaigns-desktop-table">
+                    <thead>
+                      <tr>
+                        <th>Campaign Name</th>
+                        <th>Campaign ID</th>
+                        <th>Campaign Type</th>
+                        <th>Status</th>
+                        <th>Start Date/Time</th>
+                        <th>Budget</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCampaigns.map((c) => {
+                        const id = c.campaignId || c.id;
+                        const statusClass = String(c.status || "active").toLowerCase().replace(/\s+/g, "-");
 
-                      return (
-                        <tr key={id} onClick={() => handleSelectCampaign(c)} style={{ cursor: "pointer" }}>
-                          <td>
-                            <div className="campaign-name-container">
-                              <span className="campaign-name-bold">{c.campaignName}</span>
-                              {c.plan && <span className="campaign-plan-subtitle">{c.plan}</span>}
-                            </div>
-                          </td>
-                          <td>
-                            <span className="campaign-id-cell" style={{ fontFamily: "monospace", color: "#475569" }}>
-                              {c.campaignId}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="campaign-type-pill">{c.campaignType}</span>
-                          </td>
-                          <td>
-                            <span className={`status-capsule ${statusClass}`}>
-                              {c.status}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="campaign-date-span">
-                              {c.startDate ? formatDateLabel(c.startDate) : "N/A"}{" "}
-                              {c.startTime || ""}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="campaign-budget-value">₹{c.dailyBudget}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                        return (
+                          <tr key={id} onClick={() => handleSelectCampaign(c)} style={{ cursor: "pointer" }}>
+                            <td>
+                              <div className="campaign-name-container">
+                                <span className="campaign-name-bold">{c.campaignName}</span>
+                                {c.plan && <span className="campaign-plan-subtitle">{c.plan}</span>}
+                              </div>
+                            </td>
+                            <td>
+                              <span className="campaign-id-cell" style={{ fontFamily: "monospace", color: "#475569" }}>
+                                {c.campaignId}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="campaign-type-pill">{c.campaignType}</span>
+                            </td>
+                            <td>
+                              <span className={`status-capsule ${statusClass}`}>
+                                {c.status}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="campaign-date-span">
+                                {c.startDate ? formatDateLabel(c.startDate) : "N/A"}{" "}
+                                {c.startTime || ""}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="campaign-budget-value">₹{c.dailyBudget}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         </>
       )}
 
@@ -1574,8 +1603,8 @@ const AdvertisementPage = () => {
                     {tempCustomFromDate && tempCustomToDate
                       ? `${formatDisplayDate(new Date(tempCustomFromDate))} - ${formatDisplayDate(new Date(tempCustomToDate))}`
                       : tempCustomFromDate
-                      ? `From: ${formatDisplayDate(new Date(tempCustomFromDate))}`
-                      : "Select date range"}
+                        ? `From: ${formatDisplayDate(new Date(tempCustomFromDate))}`
+                        : "Select date range"}
                   </div>
                 </div>
 
@@ -1744,16 +1773,20 @@ const AdvertisementPage = () => {
         </div>
       )}
 
-      {/* Campaign Edit/Start Confirmation Modal */}
+      {/* Campaign Start/Stop Confirmation Modal */}
       {showEditConfirmModal && (
         <div className="date-filter-modal-overlay" onClick={() => setShowEditConfirmModal(false)}>
           <div className="date-filter-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px", borderRadius: "16px", padding: "24px" }}>
             <div style={{ textAlign: "center" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "700", color: "#0f172a", marginBottom: "12px", border: "none", padding: 0 }}>
-                Are you sure you want to start campaign?
+                {confirmModalType === "stop"
+                  ? "Are you sure you want to stop campaign?"
+                  : "Are you sure you want to start campaign?"}
               </h3>
               <p style={{ fontSize: "14px", color: "#64748b", marginBottom: "24px" }}>
-                This will take you to the campaign setup page where you can edit its details.
+                {confirmModalType === "stop"
+                  ? "This will stop the campaign. You can start it again later."
+                  : "This will take you to the campaign setup page where you can edit its details."}
               </p>
               <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
                 <button
@@ -1777,15 +1810,14 @@ const AdvertisementPage = () => {
                   type="button"
                   onClick={() => {
                     setShowEditConfirmModal(false);
+
+                    if (confirmModalType === "stop") {
+                      handleStopCampaign();
+                      return;
+                    }
+
                     // Extract active value for the payload
-                    const isCampaignActive = (() => {
-                      if (campaignDetailInfo && campaignDetailInfo.active !== undefined) {
-                        return campaignDetailInfo.active === true || String(campaignDetailInfo.active).toLowerCase() === "active" || campaignDetailInfo.active === "true";
-                      }
-                      const activeVal = selectedCampaign?.active ?? selectedCampaign?.adStatus ?? selectedCampaign?.Adstatus ?? selectedCampaign?.status;
-                      if (activeVal === undefined || activeVal === null) return false;
-                      return activeVal === true || String(activeVal).toLowerCase() === "active" || activeVal === "true";
-                    })();
+                    const isCampaignActive = resolveIsCampaignActive();
 
                     // Navigate with location state
                     navigate("/advertisement/create-campaign", {
@@ -1807,7 +1839,7 @@ const AdvertisementPage = () => {
                   }}
                   style={{
                     flex: 1,
-                    background: "var(--primary-color)",
+                    background: confirmModalType === "stop" ? "#ef4444" : "var(--primary-color)",
                     color: "#fff",
                     border: "none",
                     padding: "10px",
@@ -1825,23 +1857,17 @@ const AdvertisementPage = () => {
         </div>
       )}
 
-      {/* Campaign Delete Confirmation Modal */}
+      {/* Campaign Delete Confirmation Modal — retained in code but the trigger button
+          on the details page has been removed per requirements (Delete Campaign hidden). */}
       {showDeleteConfirmModal && (
         <div className="date-filter-modal-overlay" onClick={() => setShowDeleteConfirmModal(false)}>
           <div className="date-filter-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px", borderRadius: "16px", padding: "24px" }}>
             <div style={{ textAlign: "center" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "700", color: "#ef4444", marginBottom: "12px", border: "none", padding: 0 }}>
                 {(() => {
-                  const isCampaignActive = (() => {
-                    if (campaignDetailInfo && campaignDetailInfo.active !== undefined) {
-                      return campaignDetailInfo.active === true || String(campaignDetailInfo.active).toLowerCase() === "active" || campaignDetailInfo.active === "true";
-                    }
-                    const activeVal = selectedCampaign?.active ?? selectedCampaign?.adstatus ?? selectedCampaign?.adStatus ?? selectedCampaign?.status;
-                    if (activeVal === undefined || activeVal === null) return false;
-                    return activeVal === true || String(activeVal).toLowerCase() === "active" || activeVal === "true";
-                  })();
-                  return isCampaignActive 
-                    ? "This campaign is currently active. Are you sure you want to delete it?" 
+                  const isCampaignActive = resolveIsCampaignActive();
+                  return isCampaignActive
+                    ? "This campaign is currently active. Are you sure you want to delete it?"
                     : "Are you sure you want to delete this campaign?";
                 })()}
               </h3>

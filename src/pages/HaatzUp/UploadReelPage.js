@@ -11,7 +11,7 @@ import {
   Clock
 } from "lucide-react";
 import { getSellerId } from "../../utils/sellerSession";
-import { haatzupService, uploadMediaFile } from "../../services/sellerService";
+import { haatzupService, uploadMediaFile, fetchCategories, resolveWixImage } from "../../services/sellerService";
 import "./UploadReelPage.css";
 
 const MAX_FILE_SIZE_MB = 100;
@@ -31,10 +31,16 @@ const UploadReelPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   // Form Fields
-  const [selectedProductId, setSelectedProductId] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [hashtagsInput, setHashtagsInput] = useState("");
+  const [generatingHashtags, setGeneratingHashtags] = useState(false);
+  const [generatedHashtags, setGeneratedHashtags] = useState([]);
   const [videoFile, setVideoFile] = useState(null);
   const [caption, setCaption] = useState("");
   const [publishType, setPublishType] = useState("publishNow"); // "publishNow" | "scheduled"
+  const [uploadStartTime, setUploadStartTime] = useState("");
 
   // Schedule States
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -56,8 +62,13 @@ const UploadReelPage = () => {
     setTimeout(() => setToast(null), 4500);
   };
 
-  // Load Products for Promotion
-  const loadProducts = useCallback(async () => {
+  // Set upload start time
+  useEffect(() => {
+    setUploadStartTime(new Date().toISOString());
+  }, []);
+
+  // Load Products & Categories
+  const loadProductsAndCategories = useCallback(async () => {
     const resolvedSellerId = (sellerId || getSellerId() || "").trim();
     if (!resolvedSellerId || resolvedSellerId === "null" || resolvedSellerId === "undefined") {
       setError("Seller session not found. Please login again.");
@@ -67,24 +78,45 @@ const UploadReelPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await haatzupService.getProductsForPromotion(resolvedSellerId);
-      const parsedProducts = res?.data || res?.message?.products || res?.products || res || [];
-      const productList = Array.isArray(parsedProducts) ? parsedProducts : [];
-      setProducts(productList);
-      if (productList.length > 0) {
-        setSelectedProductId(productList[0].id || productList[0]._id || productList[0].productId || "");
+      // 1. Products
+      const res = await haatzupService.getProductsForPromotion(resolvedSellerId, 1, 15);
+      
+      if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+        console.log("[HaatzUp] product selection API params:", { sellerId: resolvedSellerId, page: 1, limit: 15 });
+        console.log("[HaatzUp] product selection API response:", res);
       }
+
+      const dataProducts = res?.message?.data || [];
+      const productList = Array.isArray(dataProducts) ? dataProducts : [];
+      
+      // Filter out products missing fields
+      const filtered = productList.filter(p => {
+        const id = p.productId || p.id || p._id || p.Table_ID;
+        const name = p.name;
+        const mainMedia = p.mainMedia || p.main_media || p.mainmedia;
+        return Boolean(id) && Boolean(name) && Boolean(mainMedia);
+      });
+
+      setProducts(filtered);
+      if (filtered.length > 0) {
+        const firstId = filtered[0].productId || filtered[0].id || filtered[0]._id || filtered[0].Table_ID;
+        setSelectedProductIds([firstId]);
+      }
+
+      // 2. Categories
+      const cats = await fetchCategories();
+      setCategories(cats || []);
     } catch (err) {
-      console.error("[UploadReelPage] Failed loading products:", err);
-      setError("Failed to load products for promotion.");
+      console.error("[UploadReelPage] Failed loading products or categories:", err);
+      setError("Failed to load products/categories for promotion.");
     } finally {
       setLoading(false);
     }
   }, [sellerId]);
 
   useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
+    loadProductsAndCategories();
+  }, [loadProductsAndCategories]);
 
   // File Selection & Validation
   const handleFileChange = (e) => {
@@ -189,6 +221,121 @@ const UploadReelPage = () => {
     setShowScheduleModal(false);
   };
 
+  // Helper to extract GUID from video URL
+  const extractVideoGuid = (urlStr) => {
+    if (!urlStr) return "";
+    if (!urlStr.includes("/")) return urlStr; // It's already a GUID
+    try {
+      const cleanUrl = urlStr.trim();
+      const bunnyMatch = cleanUrl.match(/vz-[a-f0-9-]+\.b-cdn\.net\/([a-f0-9-]+)/i);
+      if (bunnyMatch && bunnyMatch[1]) return bunnyMatch[1];
+      const videosMatch = cleanUrl.match(/\/videos\/([a-f0-9-]+)/i);
+      if (videosMatch && videosMatch[1]) return videosMatch[1];
+      const urlObj = new URL(cleanUrl);
+      const parts = urlObj.pathname.split("/").filter(Boolean);
+      if (parts.length > 0) {
+        const last = parts[parts.length - 1];
+        const dotIndex = last.lastIndexOf(".");
+        const name = dotIndex !== -1 ? last.substring(0, dotIndex) : last;
+        if ((name.startsWith("play_") || name === "thumbnail" || name === "preview") && parts.length > 1) {
+          return parts[parts.length - 2];
+        }
+        return name;
+      }
+    } catch (e) {
+      console.error("Error extracting video GUID:", e);
+    }
+    return urlStr;
+  };
+
+  // Helper to extract video duration using video metadata
+  const getVideoDuration = (file) => {
+    return new Promise((resolve) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(video.src);
+        resolve(Math.round(video.duration) || 0);
+      };
+      video.onerror = () => {
+        resolve(0);
+      };
+      video.src = window.URL.createObjectURL(file);
+    });
+  };
+
+  // Hashtags generator
+  const handleGenerateHashtags = async () => {
+    const resolvedSellerId = (sellerId || getSellerId() || "").trim();
+
+    if (!resolvedSellerId) {
+      showToast("Seller session not found. Please login again.", "error");
+      return;
+    }
+
+    // Resolve the full product objects for selected IDs
+    const selectedProducts = products.filter((p) => {
+      const id = p.productId || p.id || p._id || p.Table_ID;
+      return selectedProductIds.includes(id);
+    });
+
+    if (selectedProducts.length === 0) {
+      showToast("Please select at least one product to generate hashtags.", "error");
+      return;
+    }
+
+    // Build the products array matching the backend contract
+    const productsPayload = selectedProducts.map((product) => ({
+      productId: product.productId || product.id || product._id || product.Table_ID || "",
+      productName: product.productName || product.name || product.title || "",
+      category: product.category || product.categoryName || product.productCategory || "",
+      caption: caption || ""
+    }));
+
+    const payload = {
+      sellerId: resolvedSellerId,
+      products: productsPayload
+    };
+
+    setGeneratingHashtags(true);
+    try {
+      const res = await haatzupService.generateHashtags(payload);
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[generateHashtags] parsed response:", res);
+      }
+
+      if (res?.status === "success" && Array.isArray(res?.message)) {
+        // Flatten all hashtags arrays from each product entry
+        const allHashtags = res.message
+          .flatMap((item) => (Array.isArray(item.hashtags) ? item.hashtags : []))
+          .filter(Boolean);
+
+        // Deduplicate
+        const uniqueHashtags = [...new Set(allHashtags)];
+
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[generateHashtags] parsed hashtags:", uniqueHashtags);
+        }
+
+        setGeneratedHashtags(uniqueHashtags);
+        if (uniqueHashtags.length === 0) {
+          showToast("No hashtags generated. Try adding a caption.", "info");
+        }
+      } else {
+        setGeneratedHashtags([]);
+        const errMsg = typeof res?.message === "string" ? res.message : "Failed to generate hashtags";
+        showToast(errMsg, "error");
+      }
+    } catch (err) {
+      console.error("[UploadReelPage] Failed generating hashtags:", err);
+      showToast(err?.response?.data?.message || err.message || "Failed to generate hashtags", "error");
+    } finally {
+      setGeneratingHashtags(false);
+    }
+  };
+
+
   // Submit Handler
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -198,12 +345,16 @@ const UploadReelPage = () => {
       showToast("Seller ID session missing", "error");
       return;
     }
+    if (selectedProductIds.length === 0) {
+      showToast("Please tag at least one product", "error");
+      return;
+    }
     if (!videoFile) {
       showToast("Please select a video file to upload", "error");
       return;
     }
-    if (publishType === "scheduled" && !confirmedSchedule) {
-      showToast("Please select a scheduled date and time", "error");
+    if (!caption.trim()) {
+      showToast("Please enter a caption", "error");
       return;
     }
 
@@ -211,45 +362,66 @@ const UploadReelPage = () => {
     setUploadProgress(10);
 
     try {
-      // Step 1: Upload media file to get public URL
+      // Step 1: Extract duration
+      console.log("[UploadReelPage] Extracting video duration...");
+      const videoDuration = await getVideoDuration(videoFile);
+      setUploadProgress(20);
+
+      // Step 2: Upload media file to get public URL
       console.log("[UploadReelPage] Uploading media file to obtain public URL...");
       const videoUrl = await uploadMediaFile(videoFile);
       console.log("[UploadReelPage] Media upload success. URL:", videoUrl);
       setUploadProgress(60);
 
-      // Format scheduledAt YYYY-MM-DD HH:mm:ss if scheduled
-      let scheduledAtStr = undefined;
-      if (publishType === "scheduled" && confirmedSchedule) {
-        const cd = confirmedSchedule.fullDate;
-        const yyyy = cd.getFullYear();
-        const mm = String(cd.getMonth() + 1).padStart(2, "0");
-        const dd = String(cd.getDate()).padStart(2, "0");
-        const hh = String(cd.getHours()).padStart(2, "0");
-        const min = String(cd.getMinutes()).padStart(2, "0");
-        const ss = "00";
-        scheduledAtStr = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+      // Step 3: Extract guid
+      const guid = extractVideoGuid(videoUrl);
+      if (!guid) {
+        throw new Error("Failed to extract video GUID/ID from uploaded media");
       }
 
-      // Step 2: Call uploadhaatzupVideo API
+      // Step 4: Build final hashtags array — AI-generated merged with any manual input
+      const manualHashtags = hashtagsInput
+        .split(/[\s,]+/)
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0)
+        .map(tag => (tag.startsWith("#") ? tag : `#${tag}`));
+
+      // Merge AI-generated (already parsed strings) with manual; deduplicate
+      const finalHashtags = [...new Set([...generatedHashtags, ...manualHashtags])];
+
+      // Step 5: Call uploadhaatzupVideo API
       const payload = {
+        tableId: "",
         sellerId: resolvedSellerId,
-        productId: selectedProductId || "",
-        url: videoUrl,
+        productId: selectedProductIds,
+        url: guid,
+        tags: selectedCategories,
+        videoLengthSeconds: Number(videoDuration) || 0,
+        uploadDate: uploadStartTime || new Date().toISOString(),
         caption: caption.trim(),
-        publishType: publishType === "scheduled" ? "scheduled" : "now",
-        ...(scheduledAtStr ? { scheduledAt: scheduledAtStr } : {})
+        hastag: finalHashtags,
+        status: "In Review"
       };
 
-      console.log("[UploadReelPage] Submitting uploadhaatzupVideo payload:", payload);
-      await haatzupService.uploadhaatzupVideo(payload, (percent) => {
-        setUploadProgress(60 + Math.round((percent * 40) / 100));
-      });
+      if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+        console.log("[HaatzUp] uploadhaatzupVideo payload:", payload);
+      }
 
-      setUploadProgress(100);
-      showToast("HaatzUp reel uploaded successfully!");
-      setTimeout(() => {
-        navigate("/haatzup");
-      }, 1200);
+      const res = await haatzupService.uploadHaatzUpVideo(payload);
+
+      if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+        console.log("[HaatzUp] uploadhaatzupVideo response:", res);
+      }
+
+      if (res?.status === "success" && res?.message?.action === "Video Created Successfully") {
+        setUploadProgress(100);
+        showToast("HaatzUp reel uploaded successfully!");
+        setTimeout(() => {
+          navigate("/haatzup");
+        }, 1200);
+      } else {
+        throw new Error(res?.message?.action || res?.message || "Failed to create video record on server");
+      }
     } catch (err) {
       console.error("[UploadReelPage] Upload failed:", err);
       showToast(err.message || "Failed to upload video reel.", "error");
@@ -258,7 +430,7 @@ const UploadReelPage = () => {
     }
   };
 
-  const isUploadDisabled = uploading || !videoFile || (publishType === "scheduled" && !confirmedSchedule);
+  const isUploadDisabled = uploading || !videoFile || selectedProductIds.length === 0 || !caption.trim() || (publishType === "scheduled" && !confirmedSchedule);
 
   return (
     <div className="ur-page-root" style={{ backgroundColor: "#f8fafc", minHeight: "100vh" }}>
@@ -294,7 +466,7 @@ const UploadReelPage = () => {
           <div style={{ padding: "32px", textAlign: "center", background: "#ffffff", borderRadius: "16px" }}>
             <AlertCircle size={40} color="#ef4444" />
             <p style={{ color: "#ef4444", marginTop: "12px", fontWeight: "600" }}>{error}</p>
-            <button type="button" onClick={loadProducts} style={{ marginTop: "12px", padding: "8px 16px", background: "#2563eb", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer" }}>
+            <button type="button" onClick={loadProductsAndCategories} style={{ marginTop: "12px", padding: "8px 16px", background: "#2563eb", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer" }}>
               Retry
             </button>
           </div>
@@ -383,6 +555,175 @@ const UploadReelPage = () => {
                 </div>
               </div>
 
+              {/* Product Picker */}
+              <div style={{ marginBottom: "24px" }}>
+                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", marginBottom: "12px" }}>
+                  Tag Products (Select one or more)
+                </h3>
+                {products.length === 0 ? (
+                  <p style={{ color: "#64748b", fontSize: "14px" }}>No products available for promotion.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "160px", overflowY: "auto", padding: "8px", border: "1px solid #cbd5e1", borderRadius: "12px", background: "#f8fafc" }}>
+                    {products.map((prod) => {
+                      const id = prod.productId || prod.id || prod._id || prod.Table_ID;
+                      const isChecked = selectedProductIds.includes(id);
+                      return (
+                        <label
+                          key={id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                            padding: "6px 12px",
+                            background: isChecked ? "#eff6ff" : "#ffffff",
+                            border: isChecked ? "1px solid #2563eb" : "1px solid #e2e8f0",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedProductIds(prev => [...prev, id]);
+                              } else {
+                                setSelectedProductIds(prev => prev.filter(item => item !== id));
+                              }
+                            }}
+                            style={{ width: "16px", height: "16px", accentColor: "#2563eb" }}
+                          />
+                          {prod.mainMedia && (
+                            <img
+                              src={resolveWixImage(prod.mainMedia || prod.mainmedia)}
+                              alt={prod.name}
+                              style={{ width: "32px", height: "32px", borderRadius: "4px", objectFit: "cover" }}
+                            />
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: "13px", fontWeight: "600", color: "#0f172a" }}>
+                              {prod.name}
+                            </span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Category Tags Selection */}
+              <div style={{ marginBottom: "24px" }}>
+                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", marginBottom: "12px" }}>
+                  Category Tags (Select at least one)
+                </h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {categories.map((cat) => {
+                    const name = cat.name;
+                    const isSelected = selectedCategories.includes(name);
+                    return (
+                      <button
+                        key={cat.CategoryID || name}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedCategories(prev => prev.filter(c => c !== name));
+                          } else {
+                            setSelectedCategories(prev => [...prev, name]);
+                          }
+                        }}
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: "20px",
+                          border: isSelected ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                          backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
+                          color: isSelected ? "#2563eb" : "#475569",
+                          fontSize: "12px",
+                          fontWeight: "500",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Hashtags Input & Generator */}
+              <div style={{ marginBottom: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                  <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
+                    Hashtags
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleGenerateHashtags}
+                    disabled={generatingHashtags}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#2563eb",
+                      fontWeight: "600",
+                      fontSize: "13px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {generatingHashtags ? "Generating..." : "Generate AI Hashtags"}
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Enter hashtags (comma or space separated)"
+                  value={hashtagsInput}
+                  onChange={(e) => setHashtagsInput(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    borderRadius: "12px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "14px",
+                    outline: "none",
+                    boxSizing: "border-box"
+                  }}
+                />
+
+                {generatedHashtags.length > 0 && (
+                  <div style={{ marginTop: "10px" }}>
+                    <span style={{ fontSize: "11px", color: "#64748b", display: "block", marginBottom: "6px" }}>Suggested AI Hashtags (Click to add):</span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {generatedHashtags.map((tag, tIdx) => (
+                        <button
+                          key={tIdx}
+                          type="button"
+                          onClick={() => {
+                            const normalizedTag = tag.startsWith("#") ? tag : `#${tag}`;
+                            const currentTags = hashtagsInput.split(/[\s,]+/).filter(Boolean);
+                            if (!currentTags.includes(normalizedTag)) {
+                              setHashtagsInput(prev => prev ? `${prev} ${normalizedTag}` : normalizedTag);
+                            }
+                          }}
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            backgroundColor: "#f1f5f9",
+                            color: "#0f172a",
+                            fontSize: "11px",
+                            cursor: "pointer"
+                          }}
+                        >
+                          {tag.startsWith("#") ? tag : `#${tag}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Publish Options Section matching reference */}
               <div>
                 <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", marginBottom: "12px" }}>
@@ -390,7 +731,6 @@ const UploadReelPage = () => {
                 </h3>
 
                 <div style={{ background: "#f8fafc", borderRadius: "12px", padding: "8px 16px" }}>
-                  {/* Option 1: Publish now */}
                   <div
                     onClick={() => {
                       setPublishType("publishNow");

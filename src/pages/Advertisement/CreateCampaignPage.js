@@ -393,11 +393,17 @@ const getVisibilityInfo = (count) => {
 
 const CreateCampaignPage = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const editCampaign = location.state?.editCampaign;
   const isEditMode = Boolean(editCampaign);
-
   const sellerId = resolveSellerId();
-  const navigate = useNavigate();
+
+  useEffect(() => {
+    console.log("[CampaignEdit] location.state:", location.state);
+    console.log("[CampaignEdit] isEditMode:", isEditMode);
+    console.log("[CampaignEdit] editCampaign:", editCampaign);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isProductInAnotherCampaign = (product) => {
     const cid = product.campaignId || product.CampaignID || product.campaignID || product.currentCampaignId || "";
@@ -541,6 +547,22 @@ const CreateCampaignPage = () => {
     }, 4500);
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const editIntent = params.get("mode") === "edit" || params.get("edit") === "true";
+
+    if (editIntent && !editCampaign) {
+      console.error("[CampaignEdit] Edit route opened without editCampaign state. Aborting to avoid accidental create.", {
+        pathname: location.pathname,
+        search: location.search,
+        state: location.state
+      });
+      showToast("Could not load campaign to edit. Please try again.", "error");
+      navigate("/advertisement");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Form state logger for Part F debug logs
   const formState = useMemo(() => ({
     campaignName,
@@ -602,19 +624,19 @@ const CreateCampaignPage = () => {
       // Wallet balance fetch
       const balanceResponse = await checkWalletBalance(sellerId);
       console.log("[CampaignEdit] wallet balance response:", balanceResponse);
-      
+
       const balance = balanceResponse?.data?.RemainingBalance || balanceResponse?.message?.RemainingBalance || balanceResponse?.RemainingBalance || 0;
       setWalletBalance(Number(balance));
 
       if (isEditMode) {
         console.log("[CampaignEdit] initial campaign:", editCampaign);
         console.log("[Advertisement] Selected Campaign", editCampaign);
-        
+
         // Fetch current campaign products
         const campaignId = editCampaign.campaignId;
         const campaignProductsResponse = await advertisementService.getCampaignProducts({ campaignId });
         console.log("[CampaignProductsEdit] campaign products response:", campaignProductsResponse);
-        
+
         const prods = (typeof extractCampaignProducts === "function" ? extractCampaignProducts(campaignProductsResponse) : null) || campaignProductsResponse?.products || campaignProductsResponse?.message?.products || [];
         setCurrentCampaignProducts(prods);
 
@@ -1077,7 +1099,7 @@ const CreateCampaignPage = () => {
             const isVerified =
               verifyRes === true ||
               (verifyRes?.status === "success" &&
-               verifyRes?.message?.verified === true);
+                verifyRes?.message?.verified === true);
 
             if (!isVerified) {
               throw new Error("Payment verification failed. Wallet was not credited.");
@@ -1181,10 +1203,34 @@ const CreateCampaignPage = () => {
     setSubmitting(true);
 
     if (isEditMode) {
+      const resolvedTableId =
+        editCampaign.tableId ||
+        editCampaign.TableID ||
+        editCampaign._id ||
+        editCampaign.id ||
+        "";
+
+      const resolvedCampaignId =
+        editCampaign.campaignId ||
+        editCampaign.CampaignID ||
+        editCampaign.campaignID ||
+        "";
+
+      if (!resolvedTableId || !resolvedCampaignId) {
+        showToast("Cannot update campaign: missing campaign ID.", "error");
+        console.error("[CampaignUpdate] Missing IDs:", {
+          editCampaign,
+          resolvedTableId,
+          resolvedCampaignId
+        });
+        setSubmitting(false);
+        return;
+      }
+
       const payload = {
-        _id: editCampaign.tableId,
-        tableId: editCampaign.tableId,
-        campaignId: editCampaign.campaignId,
+        _id: resolvedTableId,
+        tableId: resolvedTableId,
+        campaignId: resolvedCampaignId,
         sellerId,
         campaignType: campaignType || "Smart",
         title: campaignName.trim(),
@@ -1202,14 +1248,16 @@ const CreateCampaignPage = () => {
         console.log("[Advertisement] Update Response", response);
         console.log("[CampaignReview] update response:", response);
 
-        const isNotFoundError = response?.status === "error" && String(response?.message || response?.data?.message || "").includes("Campaign not found for given ID");
+        const isNotFoundError =
+          response?.status === "error" &&
+          String(response?.message || response?.data?.message || "").includes("Campaign not found for given ID");
 
         if (isNotFoundError || response?.status === "error") {
           if (isNotFoundError) {
             console.log("[Advertisement] Campaign not found for given ID. Info:", {
               sellerId,
-              tableId: editCampaign.tableId,
-              campaignId: editCampaign.campaignId,
+              tableId: resolvedTableId,
+              campaignId: resolvedCampaignId,
               payload
             });
           }
@@ -1226,8 +1274,8 @@ const CreateCampaignPage = () => {
         if (String(msg).includes("Campaign not found for given ID")) {
           console.log("[Advertisement] Campaign not found for given ID. Info:", {
             sellerId,
-            tableId: editCampaign.tableId,
-            campaignId: editCampaign.campaignId,
+            tableId: resolvedTableId,
+            campaignId: resolvedCampaignId,
             payload
           });
         }
@@ -1690,7 +1738,7 @@ const CreateCampaignPage = () => {
                             onChange={(e) => {
                               setManualBudget(e.target.value);
                               if (validationErrors.budget) {
-                                  setValidationErrors(prev => ({ ...prev, budget: null }));
+                                setValidationErrors(prev => ({ ...prev, budget: null }));
                               }
                             }}
                             className="manual-input"
@@ -1710,7 +1758,7 @@ const CreateCampaignPage = () => {
               {/* Right Summary Sidebar Panel */}
               <div className="cc-summary-card">
                 <h3>Campaign Launch Control</h3>
-                
+
                 <div className="summary-details-list">
                   <div className="summary-item">
                     <span className="sum-label">Campaign Type:</span>
@@ -2107,7 +2155,7 @@ const CreateCampaignPage = () => {
               {/* Right sticky launch sidebar panel */}
               <div className="cc-summary-card">
                 <h3>Launch Campaign</h3>
-                
+
                 <div className="summary-details-list">
                   <div className="summary-item">
                     <span className="sum-label">Campaign Name:</span>

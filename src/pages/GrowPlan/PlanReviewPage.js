@@ -63,10 +63,10 @@ const normalize = (value) => String(value || "").trim().toLowerCase();
 const parseDateSafe = (dateVal) => {
   if (!dateVal) return null;
   if (dateVal instanceof Date) return dateVal;
-  
+
   let d = new Date(dateVal);
   if (!isNaN(d.getTime())) return d;
-  
+
   if (typeof dateVal === 'string') {
     const parts = dateVal.split('-');
     if (parts.length === 3) {
@@ -131,9 +131,9 @@ const calculateOngoingPlanAdjustment = (currentSubscription, oldPlan, selectedSt
   const totalMonths = calculateExactMonths(start, end);
   const oldDuration =
     totalMonths >= 12 ? "12 Months" :
-    totalMonths >= 6 ? "6 Months" :
-    totalMonths >= 3 ? "3 Months" :
-    "1 Month";
+      totalMonths >= 6 ? "6 Months" :
+        totalMonths >= 3 ? "3 Months" :
+          "1 Month";
 
   const oldEffectiveAmount =
     Number(oldPlan.price || oldPlan.amount || 0) * getDurationMultiplier(oldDuration);
@@ -155,8 +155,8 @@ const calculateOngoingPlanAdjustment = (currentSubscription, oldPlan, selectedSt
 const calculateEndDate = (startDateVal, duration) => {
   const months =
     duration === "12 Months" ? 12 :
-    duration === "6 Months" ? 6 :
-    duration === "3 Months" ? 3 : 1;
+      duration === "6 Months" ? 6 :
+        duration === "3 Months" ? 3 : 1;
 
   const start = new Date(startDateVal);
   const end = new Date(start);
@@ -186,7 +186,7 @@ const PlanReviewPage = () => {
   const [appliedCouponCode, setAppliedCouponCode] = useState("");
   const [discountAmount, setDiscountAmount] = useState(0);
   const [isCouponApplied, setIsCouponApplied] = useState(false);
-  
+
   const walletBalance = initialWallet || 0;
   const [checkingReferral, setCheckingReferral] = useState(false);
   const [referralMessage, setReferralMessage] = useState({ text: "", type: "" });
@@ -229,9 +229,9 @@ const PlanReviewPage = () => {
   const isOldActive = oldExpiry ? oldExpiry > new Date() : false;
 
   // Resolve old plan info
-  const oldPlan = plans?.find(p => 
-    p.id === currentSubscription?.planId || 
-    p._id === currentSubscription?.planId || 
+  const oldPlan = plans?.find(p =>
+    p.id === currentSubscription?.planId ||
+    p._id === currentSubscription?.planId ||
     normalize(p.name) === normalize(currentSubscription?.planName || currentSubscription?.plan)
   );
 
@@ -292,14 +292,14 @@ const PlanReviewPage = () => {
 
   const isDateDisabled = (dayObj) => {
     const date = new Date(dayObj.year, dayObj.month, dayObj.day);
-    date.setHours(0,0,0,0);
-    
+    date.setHours(0, 0, 0, 0);
+
     const today = new Date();
-    today.setHours(0,0,0,0);
+    today.setHours(0, 0, 0, 0);
 
     const maxDate = new Date();
     maxDate.setMonth(maxDate.getMonth() + 3);
-    maxDate.setHours(0,0,0,0);
+    maxDate.setHours(0, 0, 0, 0);
 
     return date < today || date > maxDate;
   };
@@ -587,7 +587,7 @@ const PlanReviewPage = () => {
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
 
-      const success = storeRes?.status === "success" && 
+      const success = storeRes?.status === "success" &&
         storeRes?.message?.message === "Subscription order processed successfully";
 
       if (!success) {
@@ -710,7 +710,7 @@ const PlanReviewPage = () => {
             console.log("[GrowPlan] verifyRazorpayPayment response:", verifyRes);
 
             const verified = verifyRes?.status === "success" && verifyRes?.message?.verified === true;
-            
+
             if (!verified) {
               throw new Error("Payment transaction verification failed");
             }
@@ -803,9 +803,9 @@ const PlanReviewPage = () => {
           <div style={{ fontSize: "26px", fontWeight: "800", color: "#1e293b", marginBottom: "16px" }}>
             ₹{basePrice.toLocaleString("en-IN")} / month
           </div>
-          
+
           <div className="review-divider" />
-          
+
           <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#64748b", margin: "16px 0 10px 0" }}>What's included:</h3>
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
             {featuresToShow?.map((feature, i) => (
@@ -817,7 +817,7 @@ const PlanReviewPage = () => {
           </ul>
 
           {hasMoreFeatures && (
-            <button 
+            <button
               onClick={() => setIsFeaturesExpanded(!isFeaturesExpanded)}
               style={{
                 background: "none",
@@ -888,7 +888,7 @@ const PlanReviewPage = () => {
                       const isDisabled = isDateDisabled(dayObj);
                       const isSelected = startDate === `${dayObj.year}-${String(dayObj.month + 1).padStart(2, "0")}-${String(dayObj.day).padStart(2, "0")}`;
                       const isCurrentDay = new Date().getDate() === dayObj.day && new Date().getMonth() === dayObj.month && new Date().getFullYear() === dayObj.year;
-                      
+
                       return (
                         <button
                           key={index}
@@ -913,7 +913,7 @@ const PlanReviewPage = () => {
               <span>Plan</span>
               <span>{selectedPlan.name}</span>
             </div>
-            
+
             <div className="plan-summary-row">
               <span>Plan Price</span>
               <span>₹{basePrice.toLocaleString("en-IN")}</span>
@@ -1022,11 +1022,11 @@ const PlanReviewPage = () => {
             </button>
           </div>
           {referralMessage.text && (
-            <div style={{ 
+            <div style={{
               marginTop: "-16px",
-              marginBottom: "16px", 
-              fontSize: "12px", 
-              fontWeight: "600", 
+              marginBottom: "16px",
+              fontSize: "12px",
+              fontWeight: "600",
               color: referralMessage.type === "success" ? "#059669" : "#dc2626",
               textAlign: "left"
             }}>
@@ -1071,7 +1071,7 @@ const PlanReviewPage = () => {
               Payable Amount ₹{(isGrowPlanTestPayment ? growPlanTestAmount : payableAmount).toLocaleString("en-IN")}
             </div>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button 
+              <button
                 onClick={handleProceedSubscription}
                 style={{
                   flex: 1,
@@ -1086,7 +1086,7 @@ const PlanReviewPage = () => {
               >
                 Yes
               </button>
-              <button 
+              <button
                 onClick={() => setShowConfirmModal(false)}
                 style={{
                   flex: 1,
