@@ -5,10 +5,16 @@ import { resolveSellerId, resolveSellerEmail, resolveSellerPhone } from "../../u
 import { sellerService } from "../../services/sellerService";
 import "./PlanReviewPage.css";
 
+// TEST MODE FOR QA: keep this true while testing all Grow Plan flows.
+// Razorpay will charge only ₹1, while the page still calculates the real
+// plan price, wallet adjustment, coupon discount, upgrade waive-off, and downgrade scheduling.
+// Set this to false before production release.
+const FORCE_GROW_PLAN_ONE_RUPEE_TEST = true;
+
 const IS_SUBSCRIPTION_TEST_PAYMENT =
+  FORCE_GROW_PLAN_ONE_RUPEE_TEST ||
   process.env.REACT_APP_SUBSCRIPTION_TEST_PAYMENT === "true" ||
-  process.env.REACT_APP_GROW_PLAN_TEST_PAYMENT === "true" ||
-  true;
+  process.env.REACT_APP_GROW_PLAN_TEST_PAYMENT === "true";
 
 const isGrowPlanTestPayment = IS_SUBSCRIPTION_TEST_PAYMENT;
 
@@ -83,7 +89,20 @@ const parseDateSafe = (dateVal) => {
   return null;
 };
 
+// ─── Plan hierarchy helpers ────────────────────────────────────────────────
+const PLAN_RANK = {
+  growth: 1,
+  pro: 2,
+  enterprise: 3
+};
 
+function getPlanRank(planName) {
+  const name = String(planName || "").trim().toLowerCase();
+  if (name.includes("enterprise")) return 3;
+  if (name.includes("pro")) return 2;
+  if (name.includes("growth")) return 1;
+  return 0;
+}
 
 const getDurationMultiplier = (duration) => {
   if (duration === "12 Months") return 10;
@@ -103,6 +122,43 @@ const daysBetween = (date1, date2) => {
   const d2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
   const diff = d2.getTime() - d1.getTime();
   return Math.round(diff / (1000 * 60 * 60 * 24));
+};
+
+// Renewal window: 1/2 months = last 7 days, 3 months = last 14 days, 6/12 months = last 30 days
+const getRenewalWindowDays = (months) => {
+  if (months >= 6) return 30;
+  if (months >= 3) return 14;
+  return 7;
+};
+
+const isWithinRenewalWindow = (currentSubscription, oldExpiry) => {
+  if (!currentSubscription || !oldExpiry) return false;
+  const start = parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate);
+  if (!start) return false;
+  const months = calculateExactMonths(start, oldExpiry);
+  const windowDays = getRenewalWindowDays(months);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = new Date(oldExpiry);
+  expiry.setHours(0, 0, 0, 0);
+
+  const daysUntilExpiry = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+  return daysUntilExpiry <= windowDays;
+};
+
+const toLocalYmd = (d) => {
+  const offset = d.getTimezoneOffset();
+  const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split("T")[0];
+};
+
+const startOfDay = (value) => {
+  const d = parseDateSafe(value) || new Date(value);
+  if (!d || Number.isNaN(d.getTime())) return null;
+  const copy = new Date(d);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
 };
 
 const calculateOngoingPlanAdjustment = (currentSubscription, oldPlan, selectedStartDate) => {
@@ -223,10 +279,22 @@ const PlanReviewPage = () => {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  // Expiry date parse
+  // Expiry date parse. Mobile app treats the plan end date as inclusive.
   const currentPlanName = currentSubscription?.planName || currentSubscription?.plan;
+  const oldStart = currentSubscription ? parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate) : null;
   const oldExpiry = currentSubscription ? parseDateSafe(currentSubscription.endedDate || currentSubscription.endDate) : null;
-  const isOldActive = oldExpiry ? oldExpiry > new Date() : false;
+  const todayOnly = startOfDay(new Date());
+  const oldStartOnly = oldStart ? startOfDay(oldStart) : null;
+  const oldExpiryOnly = oldExpiry ? startOfDay(oldExpiry) : null;
+  const isOldActive = Boolean(
+    currentSubscription &&
+    oldStartOnly &&
+    oldExpiryOnly &&
+    todayOnly &&
+    normalize(currentSubscription.status) === "active" &&
+    todayOnly >= oldStartOnly &&
+    todayOnly <= oldExpiryOnly
+  );
 
   // Resolve old plan info
   const oldPlan = plans?.find(p =>
@@ -234,6 +302,30 @@ const PlanReviewPage = () => {
     p._id === currentSubscription?.planId ||
     normalize(p.name) === normalize(currentSubscription?.planName || currentSubscription?.plan)
   );
+
+  // ─── Plan rank / upgrade / downgrade / renewal classification ───────────
+  const currentRank = getPlanRank(currentSubscription?.planName || currentSubscription?.plan);
+  const selectedRank = selectedPlan ? getPlanRank(selectedPlan.name || selectedPlan.planName) : 0;
+
+  const isSamePlan = Boolean(currentSubscription && selectedRank === currentRank);
+  const isUpgrade = Boolean(currentSubscription && isOldActive && selectedRank > currentRank);
+  const isDowngrade = Boolean(currentSubscription && isOldActive && selectedRank < currentRank);
+  const isRenewal = Boolean(currentSubscription && isOldActive && isSamePlan);
+  const isNewSubscription = !currentSubscription || !isOldActive;
+
+  const renewalAllowed = isRenewal ? isWithinRenewalWindow(currentSubscription, oldExpiry) : true;
+
+  // Force start date for downgrade / renewal: current plan expiry + 1 day.
+  // Manual date selection is disabled for these cases (datepicker click is a no-op).
+  useEffect(() => {
+    if (!selectedPlan) return;
+    if ((isDowngrade || isRenewal) && oldExpiry) {
+      const forcedStart = new Date(oldExpiry.getTime());
+      forcedStart.setDate(forcedStart.getDate() + 1);
+      setStartDate(toLocalYmd(forcedStart));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDowngrade, isRenewal, oldExpiry ? oldExpiry.getTime() : null, selectedPlan]);
 
   // Start/End date constraints
   const getTodayYmd = () => {
@@ -304,7 +396,11 @@ const PlanReviewPage = () => {
     return date < today || date > maxDate;
   };
 
+  // Manual date selection is only allowed for upgrade / new subscription flows.
+  const isDatePickerLocked = isDowngrade || isRenewal;
+
   const handleSelectDate = (dayObj) => {
+    if (isDatePickerLocked) return;
     const d = new Date(dayObj.year, dayObj.month, dayObj.day);
     const offset = d.getTimezoneOffset();
     const localDate = new Date(d.getTime() - (offset * 60 * 1000));
@@ -337,14 +433,13 @@ const PlanReviewPage = () => {
     }
   };
 
-  const isSamePlan = selectedPlan ? (normalize(selectedPlan.name) === normalize(currentPlanName)) : false;
-
   // Calculations
   const basePrice = selectedPlan ? Number(selectedPlan.price || 0) : 0;
   const newMultiplier = getDurationMultiplier(planDuration);
   const totalPrice = basePrice * newMultiplier;
 
-  const { oldEffectiveAmount, usedAmount, remainingAmount } = (isOldActive && oldPlan && !isSamePlan)
+  // Ongoing plan waive-off only applies to true upgrades.
+  const { oldEffectiveAmount, usedAmount, remainingAmount } = (isUpgrade && oldPlan)
     ? calculateOngoingPlanAdjustment(currentSubscription, oldPlan, startDate)
     : { oldEffectiveAmount: 0, usedAmount: 0, remainingAmount: 0 };
 
@@ -360,14 +455,26 @@ const PlanReviewPage = () => {
 
   // Adaptive CTA Button Text
   const getCtaButtonText = () => {
-    if (isSamePlan) {
-      return "Renew Now";
+    if (isRenewal) {
+      return renewalAllowed ? "Renew Now" : "Current Plan";
     }
-    if (currentSubscription) {
+    if (isDowngrade) {
+      return "Schedule Downgrade";
+    }
+    if (isUpgrade) {
       return "Upgrade Now";
     }
     return "Subscribe Now";
   };
+
+  const getConfirmModalTitle = () => {
+    if (isRenewal) return "Ready to renew?";
+    if (isDowngrade) return "Ready to schedule downgrade?";
+    if (isUpgrade) return "Ready to upgrade?";
+    return "Ready to subscribe?";
+  };
+
+  const isCtaDisabled = isRenewal && !renewalAllowed;
 
   // Toast helper
   const showToast = (msg) => {
@@ -519,45 +626,100 @@ const PlanReviewPage = () => {
       };
 
       const selStart = new Date(startDate);
-      const statusStr = isScheduled ? "Scheduled" : "Active";
+      const statusStr = isDowngrade ? "Scheduled" : (isScheduled ? "Scheduled" : "Active");
 
-      // Running upgrade split: update old end date to selectedStartDate - 1 day
-      if (!isSamePlan && isOldActive && oldPlan && selStart <= oldExpiry) {
-        setProcessingMessage("Terminating previous subscription...");
-        const dayBefore = new Date(selStart.getTime());
-        dayBefore.setDate(dayBefore.getDate() - 1);
+      const currentTableId =
+        currentSubscription?.TableID ||
+        currentSubscription?.tableId ||
+        currentSubscription?._id ||
+        "";
 
-        const endOldPayload = {
-          createSellerInvoice: {},
-          createSubscription: {
-            tableId: currentSubscription.TableID || currentSubscription.tableId || currentSubscription._id || "",
-            planName: currentSubscription.planName || currentSubscription.plan || "",
-            planId: currentSubscription.planId || currentSubscription.id || "",
-            status: "Active",
-            email: sellerEmail,
-            startedDate: currentSubscription.startedDate || currentSubscription.startDate,
-            endedDate: dayBefore.toISOString(),
-            paymentId: currentSubscription.paymentId || "",
-            razorpayOrderId: currentSubscription.razorpayOrderId || currentSubscription.orderId || "",
-            sellerId: sellerId,
-            phone: currentSubscription.phone || sellerProfile?.phone || ""
-          },
-          referralUpdate: {
-            rewardEarned: 0,
-            rewardUsed: 0,
-            referralCode: ""
-          }
-        };
+      const selectedPlanId =
+        selectedPlan?.planId ||
+        selectedPlan?._id ||
+        selectedPlan?.id ||
+        "";
 
-        console.log("[PlanReview] Terminating old subscription payload:", endOldPayload);
-        await sellerService.processSubscriptionOrder(endOldPayload);
+      // Old subscription "started today" => same-day upgrade, safe to overwrite in place.
+      const isOldStartedToday = currentSubscription && (() => {
+        const started = startOfDay(currentSubscription.startedDate || currentSubscription.startDate);
+        const today = startOfDay(new Date());
+        return Boolean(started && today && started.getTime() === today.getTime());
+      })();
+
+      console.log("[PlanReview] Debug before processSubscriptionOrder:", {
+        currentSubscription,
+        selectedPlan,
+        currentRank,
+        selectedRank,
+        isSamePlan,
+        isUpgrade,
+        isDowngrade,
+        isRenewal,
+        isScheduled,
+        oldEffectiveAmount,
+        usedAmount,
+        remainingAmount,
+        payableAmount
+      });
+
+      let tableIdToUse = "";
+
+      if (isRenewal) {
+        // Renewal: update the same subscription record.
+        tableIdToUse = currentTableId;
+      } else if (isUpgrade) {
+        if (isOldStartedToday) {
+          // Same-day upgrade: overwrite the just-created subscription, no split needed.
+          tableIdToUse = currentTableId;
+        } else if (currentTableId && oldExpiry && selStart <= oldExpiry) {
+          // Running upgrade: close out the old subscription the day before the new one starts,
+          // then create a brand new subscription record for the upgraded plan, matching Flutter mobile flow.
+          setProcessingMessage("Terminating previous subscription...");
+          const dayBefore = new Date(selStart.getTime());
+          dayBefore.setDate(dayBefore.getDate() - 1);
+
+          const endOldPayload = {
+            createSellerInvoice: {},
+            createSubscription: {
+              tableId: currentTableId,
+              planName: currentSubscription.planName || currentSubscription.plan || "",
+              planId: currentSubscription.planId || currentSubscription.id || "",
+              status: "Active",
+              email: sellerEmail,
+              startedDate: currentSubscription.startedDate || currentSubscription.startDate,
+              endedDate: dayBefore.toISOString(),
+              paymentId: currentSubscription.paymentId || "",
+              razorpayOrderId: currentSubscription.razorpayOrderId || currentSubscription.orderId || "",
+              sellerId: sellerId,
+              phone: currentSubscription.phone || sellerProfile?.phone || ""
+            },
+            referralUpdate: {
+              rewardEarned: 0,
+              rewardUsed: 0,
+              referralCode: ""
+            }
+          };
+
+          console.log("[PlanReview] Terminating old subscription payload:", endOldPayload);
+          await sellerService.processSubscriptionOrder(endOldPayload);
+          tableIdToUse = "";
+        } else {
+          tableIdToUse = "";
+        }
+      } else if (isDowngrade) {
+        // Downgrade: never touch the currently active subscription; schedule a new one.
+        tableIdToUse = "";
+      } else {
+        // Brand new subscription.
+        tableIdToUse = "";
       }
 
-      // New upgraded subscription payload
+      // New upgraded/renewed/downgraded/subscribed record
       const subPayload = {
-        tableId: isSamePlan ? (currentSubscription.TableID || currentSubscription.tableId || currentSubscription._id || "") : "",
+        tableId: tableIdToUse,
         planName: selectedPlan.name,
-        planId: selectedPlan.id,
+        planId: selectedPlanId,
         status: statusStr,
         email: sellerEmail,
         startedDate: selStart.toISOString(),
@@ -583,6 +745,7 @@ const PlanReviewPage = () => {
         referralUpdate: referralPayload
       };
 
+      console.log("[PlanReview] tableId used:", tableIdToUse);
       console.log("[processSubscriptionOrder payload]", storePayload);
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
@@ -594,7 +757,13 @@ const PlanReviewPage = () => {
         throw new Error(storeRes?.message?.error || "Subscription activation failed on backend.");
       }
 
-      const successToastMsg = isScheduled ? "Plan scheduled successfully" : "Plan upgraded successfully";
+      const successToastMsg = isDowngrade
+        ? "Downgrade scheduled successfully"
+        : isScheduled
+          ? "Plan scheduled successfully"
+          : isRenewal
+            ? "Plan renewed successfully"
+            : "Plan upgraded successfully";
       showToast(successToastMsg);
 
       // Re-fetch in background silently
@@ -629,6 +798,12 @@ const PlanReviewPage = () => {
       return;
     }
 
+    if (isRenewal && !renewalAllowed) {
+      setErrorMsg("You can renew this plan only near expiry period");
+      showToast("You can renew this plan only near expiry period");
+      return;
+    }
+
     paymentInProgressRef.current = true;
     setIsProcessingPayment(true);
     setPaymentStatus("processing");
@@ -647,6 +822,11 @@ const PlanReviewPage = () => {
       const paymentAmountForRazorpay = getRazorpayAmount(payableAmount);
 
       console.log("[GrowPlan] selectedPlan:", selectedPlan);
+      console.log("[GrowPlan] currentSubscription:", currentSubscription);
+      console.log("[GrowPlan] currentRank/selectedRank:", currentRank, selectedRank);
+      console.log("[GrowPlan] isSamePlan/isUpgrade/isDowngrade/isRenewal:", isSamePlan, isUpgrade, isDowngrade, isRenewal);
+      console.log("[GrowPlan] isScheduled:", isScheduled);
+      console.log("[GrowPlan] oldEffectiveAmount/usedAmount/remainingAmount:", oldEffectiveAmount, usedAmount, remainingAmount);
       console.log("[GrowPlan] payableAmount:", payableAmount);
       console.log("[GrowPlan] paymentAmountForRazorpay:", paymentAmountForRazorpay);
 
@@ -838,6 +1018,39 @@ const PlanReviewPage = () => {
 
         {/* Right Column: Review Details & Summary Card */}
         <div className="plan-review-right-card">
+
+          {isDowngrade && (
+            <div className="grow-plan-test-mode-note" style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              color: "#1d4ed8",
+              padding: "12px",
+              borderRadius: "8px",
+              fontSize: "13px",
+              fontWeight: "600",
+              marginBottom: "16px",
+              textAlign: "left"
+            }}>
+              Downgrade will start after your current plan ends.
+            </div>
+          )}
+
+          {isRenewal && !renewalAllowed && (
+            <div className="grow-plan-test-mode-note" style={{
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#b91c1c",
+              padding: "12px",
+              borderRadius: "8px",
+              fontSize: "13px",
+              fontWeight: "600",
+              marginBottom: "16px",
+              textAlign: "left"
+            }}>
+              You can renew this plan only near expiry period.
+            </div>
+          )}
+
           {/* 1. Start Date selector (Custom Datepicker Popover) */}
           <div className="start-date-block" ref={datePickerRef} style={{ textAlign: "left" }}>
             <label className="start-date-label">
@@ -848,11 +1061,12 @@ const PlanReviewPage = () => {
                 type="text"
                 readOnly
                 value={getFormattedStartDate()}
-                onClick={() => setShowDatePicker(!showDatePicker)}
+                onClick={() => !isDatePickerLocked && setShowDatePicker(!showDatePicker)}
                 className="start-date-input"
+                style={isDatePickerLocked ? { cursor: "not-allowed", opacity: 0.75 } : undefined}
               />
               <svg
-                onClick={() => setShowDatePicker(!showDatePicker)}
+                onClick={() => !isDatePickerLocked && setShowDatePicker(!showDatePicker)}
                 style={{
                   position: "absolute",
                   right: "16px",
@@ -860,7 +1074,7 @@ const PlanReviewPage = () => {
                   transform: "translateY(-50%)",
                   width: "20px",
                   height: "20px",
-                  cursor: "pointer",
+                  cursor: isDatePickerLocked ? "not-allowed" : "pointer",
                   color: "#64748b"
                 }}
                 fill="none"
@@ -871,7 +1085,7 @@ const PlanReviewPage = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
 
-              {showDatePicker && (
+              {showDatePicker && !isDatePickerLocked && (
                 <div className="date-picker-popover">
                   <div className="calendar-header">
                     <button type="button" onClick={handlePrevMonth} className="calendar-nav-btn">&lt;</button>
@@ -954,8 +1168,8 @@ const PlanReviewPage = () => {
               <span>₹{totalPrice.toLocaleString("en-IN")}</span>
             </div>
 
-            {/* Upgrade ongoing details if applicable */}
-            {isOldActive && oldPlan && !isSamePlan && (
+            {/* Upgrade ongoing details — shown only for true upgrades */}
+            {isUpgrade && oldPlan && (
               <>
                 <div className="plan-summary-row">
                   <span>Ongoing Plan</span>
@@ -993,14 +1207,13 @@ const PlanReviewPage = () => {
             <input
               type="checkbox"
               id="walletRedeemCheck"
-              checked={isGrowPlanTestPayment ? false : useWallet}
+              checked={useWallet}
               onChange={(e) => setUseWallet(e.target.checked)}
-              disabled={isGrowPlanTestPayment}
-              style={{ cursor: isGrowPlanTestPayment ? "not-allowed" : "pointer", width: "16px", height: "16px" }}
+              style={{ cursor: "pointer", width: "16px", height: "16px" }}
             />
-            <label htmlFor="walletRedeemCheck" style={{ cursor: isGrowPlanTestPayment ? "not-allowed" : "pointer", fontSize: "14px", fontWeight: "600", color: isGrowPlanTestPayment ? "#94a3b8" : "#334155", display: "flex", justifyContent: "space-between", width: "100%", margin: 0 }}>
+            <label htmlFor="walletRedeemCheck" style={{ cursor: "pointer", fontSize: "14px", fontWeight: "600", color: "#334155", display: "flex", justifyContent: "space-between", width: "100%", margin: 0 }}>
               <span>Redeem Wallet Balance?</span>
-              <span style={{ color: isGrowPlanTestPayment ? "#94a3b8" : "#2962ff" }}>₹{walletBalance}</span>
+              <span style={{ color: "#2962ff" }}>₹{walletBalance}</span>
             </label>
           </div>
 
@@ -1046,7 +1259,7 @@ const PlanReviewPage = () => {
               marginBottom: "16px",
               textAlign: "left"
             }}>
-              Test mode enabled: You will be charged ₹{growPlanTestAmount}. Actual plan price is ₹{payableAmount.toLocaleString("en-IN")}.
+              Test mode enabled: You will be charged ₹{growPlanTestAmount}. Actual calculated payable after coupon/wallet/upgrade adjustment is ₹{payableAmount.toLocaleString("en-IN")}. Wallet selection is allowed for calculation testing, but real wallet debit is not sent in test mode.
             </div>
           )}
 
@@ -1054,6 +1267,8 @@ const PlanReviewPage = () => {
           <button
             className="btn-review-upgrade-cta"
             onClick={() => setShowConfirmModal(true)}
+            disabled={isCtaDisabled}
+            style={isCtaDisabled ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
           >
             {getCtaButtonText()}
           </button>
@@ -1065,7 +1280,7 @@ const PlanReviewPage = () => {
         <div className="review-confirm-modal-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 2000 }}>
           <div className="review-confirm-modal-container" style={{ background: "#ffffff", padding: "24px", borderRadius: "12px", width: "420px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", textAlign: "center" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#1e293b", margin: "0 0 16px 0", lineHeight: "1.5" }}>
-              Ready to upgrade? Subscribe to this plan for ₹{(isGrowPlanTestPayment ? growPlanTestAmount : totalPrice).toLocaleString("en-IN")}?
+              {getConfirmModalTitle()}
             </h3>
             <div style={{ color: "#10b981", fontSize: "18px", fontWeight: "800", marginBottom: "24px" }}>
               Payable Amount ₹{(isGrowPlanTestPayment ? growPlanTestAmount : payableAmount).toLocaleString("en-IN")}
