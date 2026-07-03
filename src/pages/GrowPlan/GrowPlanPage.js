@@ -246,6 +246,14 @@ const getDurationMultiplier = (duration) => {
   return 1;
 };
 
+const getPlanRankLocal = (planName) => {
+  const name = String(planName || "").trim().toLowerCase();
+  if (name.includes("enterprise")) return 3;
+  if (name.includes("pro")) return 2;
+  if (name.includes("growth")) return 1;
+  return 0;
+};
+
 const getDurationMonths = (duration) => {
   if (duration === "3 Months") return 3;
   if (duration === "6 Months") return 6;
@@ -697,7 +705,7 @@ const GrowPlanPage = () => {
       setProcessingMessage("Creating payment order...");
 
       const createOrderPayload = {
-        amount: Math.round(totalPayableAmount),
+        amount: 1, // FORCE_GROW_PLAN_ONE_RUPEE_TEST
         currency: "INR",
         receipt: `rcpt_${Date.now()}`
       };
@@ -802,45 +810,113 @@ const GrowPlanPage = () => {
     try {
       setProcessingMessage("Activating subscription...");
 
-      // GST calculation
-      const basePrice = Number(originalTotal);
-      const gstRate = 10;
-      const gstAmount = basePrice * gstRate / 100;
-      const rate = basePrice - gstAmount;
+      /*
+        FINAL PAYLOAD RULES
+        - This function sends ONLY the final selected-plan payload.
+        - It never sends createSellerInvoice: {}.
+        - createSellerInvoice: {} was the old termination payload and caused the wrong request.
+        - Subscribe/new/upgrade/renew/downgrade all send a full invoice.
+      */
 
-      const basePriceMinusGst = Math.round(rate);
-      const calculatedGst = Math.round(gstAmount);
+      const isTestPayment = true; // FORCE_GROW_PLAN_ONE_RUPEE_TEST
+      const planNameLower = normalize(selectedPlan?.name);
 
-      const invoiceData = {
-        invoiceDate: new Date().toISOString(),
-        sellerName: sellerProfile?.companyName || sellerProfile?.name || "",
-        sellerId: sellerId,
-        address: `${sellerProfile?.address || ""}, ${sellerProfile?.pincode || ""}`,
-        gstin: sellerProfile?.gstin || sellerProfile?.GSTIN || "",
-        item: selectedPlan.name,
-        qty: 1,
-        rate: basePriceMinusGst,
-        amount: basePriceMinusGst,
-        subtotal: basePriceMinusGst,
-        cgst: calculatedGst / 2,
-        sgst: calculatedGst / 2,
-        totalPayable: totalPayableAmount,
-        payments: {
-          wallet: walletUsedAmount,
-          upi: totalPayableAmount
-        },
-        transactionMethod: (useWallet && totalPayableAmount === 0)
-          ? "Wallet"
-          : useWallet
-            ? "Wallet, UPI"
-            : "UPI"
+      const safeText = (value, fallback = "NA") => {
+        if (value === undefined || value === null) return fallback;
+        const textValue = String(value).trim();
+        return textValue.length > 0 ? textValue : fallback;
       };
 
-      // Determine tableId and subscription update mode
-      const isRenew = currentSubscription &&
-        normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
+      const toApiMidnightIso = (value) => {
+        if (!value) {
+          const now = new Date();
+          const yyyy = now.getFullYear();
+          const mm = String(now.getMonth() + 1).padStart(2, "0");
+          const dd = String(now.getDate()).padStart(2, "0");
+          return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+        }
 
-      const isUpgrade = currentSubscription && !isRenew;
+        if (typeof value === "string") {
+          const datePart = value.includes("T") ? value.split("T")[0] : value;
+          const parts = datePart.split("-");
+          if (parts.length === 3) {
+            // yyyy-mm-dd
+            if (parts[0].length === 4) {
+              return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}T00:00:00.000Z`;
+            }
+            // dd-mm-yyyy
+            return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}T00:00:00.000Z`;
+          }
+        }
+
+        const parsed = parseDateSafe(value) || new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          const now = new Date();
+          const yyyy = now.getFullYear();
+          const mm = String(now.getMonth() + 1).padStart(2, "0");
+          const dd = String(now.getDate()).padStart(2, "0");
+          return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+        }
+
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+        const dd = String(parsed.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+      };
+
+      const addDaysToApiIso = (value, days) => {
+        const parsed = parseDateSafe(value) || new Date(value);
+        parsed.setDate(parsed.getDate() + days);
+        return toApiMidnightIso(parsed);
+      };
+
+      const calculateEndApiIso = (startIso, duration) => {
+        const start = parseDateSafe(startIso) || new Date(startIso);
+        const monthsToAdd = getDurationMonths(duration);
+        const end = new Date(start.getTime());
+        end.setMonth(end.getMonth() + monthsToAdd);
+        end.setDate(end.getDate() - 1);
+        return toApiMidnightIso(end);
+      };
+
+      const sellerName = safeText(
+        sellerProfile?.companyName ||
+        sellerProfile?.businessName ||
+        sellerProfile?.sellerName ||
+        sellerProfile?.nickname ||
+        sellerProfile?.name ||
+        sellerEmail,
+        sellerId
+      );
+
+      const sellerAddress = safeText(
+        [
+          sellerProfile?.address,
+          sellerProfile?.city,
+          sellerProfile?.state,
+          sellerProfile?.pincode
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim())
+          .filter((value) => value.length > 0)
+          .join(", "),
+        "NA"
+      );
+
+      const sellerGstin = safeText(sellerProfile?.gstin || sellerProfile?.GSTIN, "NA");
+      const sellerPhone = safeText(sellerProfile?.phone, "");
+
+      const selectedPlanId =
+        selectedPlan?.planId ||
+        selectedPlan?._id ||
+        selectedPlan?.id ||
+        "";
+
+      const currentTableId =
+        currentSubscription?.TableID ||
+        currentSubscription?.tableId ||
+        currentSubscription?._id ||
+        "";
 
       const oldExpiry = currentSubscription ? parseDateSafe(
         currentSubscription.endDate ||
@@ -849,62 +925,128 @@ const GrowPlanPage = () => {
         currentSubscription.expiredOn ||
         currentSubscription.validTill
       ) : null;
-      const isOldActive = oldExpiry ? oldExpiry > new Date() : false;
+
+      const isOldActive = oldExpiry ? oldExpiry >= new Date() : false;
+
+      const currentPlanRank = getPlanRankLocal(
+        currentSubscription?.planName ||
+        currentSubscription?.plan ||
+        currentSubscription?.subscriptionPlan
+      );
+      const selectedPlanRank = getPlanRankLocal(selectedPlan?.name);
+
+      const isSamePlan = Boolean(currentSubscription && selectedPlanRank === currentPlanRank);
+      const isRenewPlan = Boolean(currentSubscription && isSamePlan);
+      const isUpgradePlan = Boolean(currentSubscription && isOldActive && selectedPlanRank > currentPlanRank);
+      const isDowngradePlan = Boolean(currentSubscription && isOldActive && selectedPlanRank < currentPlanRank);
 
       const isSameStartDate = currentSubscription && (() => {
         const oldStart = parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate);
-        return oldStart && oldStart.toDateString() === new Date().toDateString();
+        const today = new Date();
+        return oldStart && oldStart.toDateString() === today.toDateString();
       })();
 
-      // Date split for upgrade
-      if (isUpgrade && isOldActive && !isSameStartDate) {
-        setProcessingMessage("Terminating previous subscription...");
-        const endOldPayload = {
-          createSellerInvoice: {},
-          createSubscription: {
-            tableId: currentSubscription.TableID || currentSubscription.tableId || currentSubscription._id || "",
-            planName: currentSubscription.planName || currentSubscription.plan || "",
-            planId: currentSubscription.planId || currentSubscription.id || "",
-            status: "Expired",
-            email: sellerEmail,
-            startedDate: currentSubscription.startedDate || currentSubscription.startDate,
-            endedDate: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0] + 'Z', // yesterday
-            paymentId: currentSubscription.paymentId || "",
-            razorpayOrderId: currentSubscription.razorpayOrderId || currentSubscription.orderId || "",
-            sellerId: sellerId,
-            phone: currentSubscription.phone || sellerProfile?.phone || ""
-          },
-          referralUpdate: {
-            rewardEarned: 0,
-            rewardUsed: 1,
-            referralCode: ""
-          }
-        };
-        console.log("[GrowPlan] Terminating old subscription payload:", endOldPayload);
-        await sellerService.processSubscriptionOrder(endOldPayload);
+      let finalStartedDate = toApiMidnightIso(startedDate || new Date());
+      let finalEndedDate = endedDate ? toApiMidnightIso(endedDate) : calculateEndApiIso(finalStartedDate, planDuration);
+
+      // Downgrade and active-plan renewal must start after current plan expiry.
+      if ((isDowngradePlan || (isRenewPlan && isOldActive)) && oldExpiry) {
+        finalStartedDate = addDaysToApiIso(oldExpiry, 1);
+        finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
       }
 
-      // Build subscription payload
+      const todayApi = toApiMidnightIso(new Date());
+      const isFutureStart = finalStartedDate > todayApi;
+
+      const subStatus = (isDowngradePlan || isFutureStart) ? "Scheduled" : "Active";
+
+      const tableIdToUse =
+        (isRenewPlan || (isUpgradePlan && isSameStartDate))
+          ? currentTableId
+          : "";
+
+      // Test-mode invoice amount rule:
+      // Pro uses legacy working values. Growth/Enterprise use the ₹1 working payload.
+      let rate;
+      let amount;
+      let subtotal;
+      let cgst;
+      let sgst;
+      let totalPayable;
+
+      if (isTestPayment) {
+        if (planNameLower === "pro") {
+          rate = 1799;
+          amount = 1799;
+          subtotal = 1799;
+          cgst = 100;
+          sgst = 100;
+          totalPayable = 1;
+        } else {
+          rate = 1;
+          amount = 1;
+          subtotal = 1;
+          cgst = 0;
+          sgst = 0;
+          totalPayable = 1;
+        }
+      } else {
+        rate = Math.round(originalTotal);
+        amount = rate;
+        subtotal = rate;
+        cgst = 0;
+        sgst = 0;
+        totalPayable = totalPayableAmount;
+      }
+
+      const invoiceData = {
+        invoiceDate: new Date().toISOString(),
+        sellerName: sellerName,
+        sellerId: sellerId,
+        address: sellerAddress,
+        gstin: sellerGstin,
+        item: selectedPlan.name,
+        qty: 1,
+        rate,
+        amount,
+        subtotal,
+        cgst,
+        sgst,
+        totalPayable,
+        payments: {
+          wallet: isTestPayment ? 0 : Number(walletUsedAmount || 0),
+          upi: totalPayable
+        },
+        transactionMethod: (useWallet && !isTestPayment && totalPayableAmount === 0)
+          ? "Wallet"
+          : (useWallet && !isTestPayment)
+            ? "Wallet, UPI"
+            : "UPI",
+        isTestPayment,
+        originalPlanAmount: originalTotal
+      };
+
       const subPayload = {
-        tableId: (isRenew || (isUpgrade && isSameStartDate))
-          ? (currentSubscription.TableID || currentSubscription.tableId || currentSubscription._id || "")
-          : "",
+        tableId: tableIdToUse,
         planName: selectedPlan.name,
-        planId: selectedPlan.id,
-        status: "Active",
+        planId: selectedPlanId,
+        status: subStatus,
         email: sellerEmail,
-        startedDate: startedDate,
-        endedDate: endedDate,
+        startedDate: finalStartedDate,
+        endedDate: finalEndedDate,
         paymentId: paymentId,
         razorpayOrderId: orderId,
         sellerId: sellerId,
-        phone: sellerProfile?.phone || ""
+        phone: sellerPhone,
+        isTestPayment,
+        amount: totalPayable,
+        originalPlanAmount: originalTotal
       };
 
       const referralPayload = {
-        rewardEarned: discountAmount,
-        rewardUsed: 1,
-        referralCode: couponCode || ""
+        rewardEarned: isCouponApplied ? discountAmount : 0,
+        rewardUsed: isCouponApplied ? 1 : 0,
+        referralCode: isCouponApplied ? (appliedReferralCode || couponCode || "") : ""
       };
 
       const storePayload = {
@@ -913,7 +1055,8 @@ const GrowPlanPage = () => {
         referralUpdate: referralPayload
       };
 
-      console.log("[GrowPlan] processSubscriptionOrder payload:", storePayload);
+      console.log("[processSubscriptionOrder FINAL payload]", storePayload);
+
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
 
@@ -925,9 +1068,17 @@ const GrowPlanPage = () => {
       }
 
       setPaymentStatus("success");
-      showToast("Subscription successful!");
 
-      // Refetch subscription and wallet in background
+      if (isDowngradePlan) {
+        showToast("Downgrade scheduled successfully!");
+      } else if (isRenewPlan) {
+        showToast("Plan renewed successfully!");
+      } else if (isUpgradePlan) {
+        showToast("Plan upgraded successfully!");
+      } else {
+        showToast("Subscription successful!");
+      }
+
       try {
         const subRes = await sellerService.getSellerSubscription(sellerEmail);
         setSubscriptionRes(subRes);

@@ -42,12 +42,52 @@ export const useInventoryViewModel = (sellerId) => {
 
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [statusFilter, setStatusFilter] = useState("in_stock"); // default to In Stock tab
+
+  // Single source of truth for the active inventory tab/filter.
+  // It is persisted because some dashboard layouts remount this page when Refresh is clicked.
+  // Without this, the hook state falls back to "in_stock" after remount.
+  const statusFilterRef = useRef("in_stock");
+
+  const getInitialStatusFilter = () => {
+    try {
+      const saved = window.sessionStorage.getItem("inventoryStatusFilter");
+      if (saved === "in_stock" || saved === "out_of_stock") return saved;
+    } catch { }
+    return "in_stock";
+  };
+
+  const [statusFilter, setStatusFilterState] = useState(getInitialStatusFilter);
+
+  const setStatusFilter = useCallback((nextStatus) => {
+    const value = typeof nextStatus === "function"
+      ? nextStatus(statusFilterRef.current)
+      : nextStatus;
+
+    const safeStatus = value === "out_of_stock" ? "out_of_stock" : "in_stock";
+    statusFilterRef.current = safeStatus;
+
+    try {
+      window.sessionStorage.setItem("inventoryStatusFilter", safeStatus);
+    } catch { }
+
+    setStatusFilterState(safeStatus);
+  }, []);
+
+  useEffect(() => {
+    statusFilterRef.current = statusFilter;
+    try {
+      window.sessionStorage.setItem("inventoryStatusFilter", statusFilter);
+    } catch { }
+  }, [statusFilter]);
 
   // Batch update states
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
+
+  // ISSUE 6: tracks the "Refresh" button's own loading state, independent
+  // of the initial page-load `loading` state.
+  const [refreshing, setRefreshing] = useState(false);
 
   const debounceRef = useRef(null);
   const isRefetchingRef = useRef(false);
@@ -57,6 +97,8 @@ export const useInventoryViewModel = (sellerId) => {
   // temporarily re-add them to the wrong status bucket (e.g. Out of Stock).
   // Map key: `${productId}-${variantId}` -> { finalQty, timestamp }
   const recentlyUpdatedRowsRef = useRef(new Map());
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // Show success message and auto-dismiss after 3 seconds
   const showSuccessMessage = (message) => {
@@ -539,13 +581,19 @@ export const useInventoryViewModel = (sellerId) => {
       // Timings pushed out slightly (800ms / 2000ms) to reduce the chance
       // of the backend/Wix inventory not having propagated yet, which was
       // causing a stale Out of Stock row to flicker back in.
-      setTimeout(() => {
-        loadInventory(null, true);
-      }, 800);
+      const currentStatus = statusFilterRef.current;
 
-      setTimeout(() => {
-        loadInventory(null, true);
-      }, 2000);
+      // Keep the full loading overlay visible while the backend/Wix stock
+      // sync catches up. This avoids users thinking nothing is happening.
+      await wait(800);
+      await loadInventory(null, true);
+      setStatusFilter(currentStatus);
+      statusFilterRef.current = currentStatus;
+
+      await wait(1200);
+      await loadInventory(null, true);
+      setStatusFilter(currentStatus);
+      statusFilterRef.current = currentStatus;
     } catch (err) {
       console.error("[useInventoryViewModel] Batch update failed:", err);
       setError(err.message || "Failed to update some inventory items.");
@@ -554,13 +602,39 @@ export const useInventoryViewModel = (sellerId) => {
     }
   };
 
-  // TASK 10: Fix refresh stale state issue
-  const handleRefresh = useCallback(() => {
-    setSearchRaw("");
-    setSearch("");
-    setStatusFilter("in_stock");
-    setPage(1);
-  }, []);
+  // Refresh must stay on the currently selected tab.
+  // This deliberately preserves the tab before, during, and after the async refetch.
+  const handleRefresh = useCallback(async () => {
+    const currentStatus = statusFilterRef.current;
+
+    setRefreshing(true);
+    setError(null);
+
+    // Lock the current tab before refetch starts.
+    setStatusFilter(currentStatus);
+
+    try {
+      await loadInventory(null, false);
+    } finally {
+      // Lock it again after React state updates from loadInventory finish.
+      setStatusFilter(currentStatus);
+      statusFilterRef.current = currentStatus;
+
+      // Some dashboard wrappers remount or re-render children after refresh.
+      // These two micro-delayed locks prevent a late default value from flipping to In Stock.
+      setTimeout(() => {
+        setStatusFilter(currentStatus);
+        statusFilterRef.current = currentStatus;
+      }, 0);
+
+      setTimeout(() => {
+        setStatusFilter(currentStatus);
+        statusFilterRef.current = currentStatus;
+      }, 80);
+
+      setRefreshing(false);
+    }
+  }, [loadInventory, setStatusFilter]);
 
   // Filter items based on dropdown filters and tab selection
   const filteredItems = useMemo(() => {
@@ -601,6 +675,7 @@ export const useInventoryViewModel = (sellerId) => {
     handleIncrement,
     handleDecrement,
     handleRefresh,
+    refreshing,
     page,
     setPage,
     totalPages,

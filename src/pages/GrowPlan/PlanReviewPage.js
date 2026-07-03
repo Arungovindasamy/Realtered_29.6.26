@@ -551,20 +551,69 @@ const PlanReviewPage = () => {
     try {
       setProcessingMessage("Activating subscription...");
 
-      // GST calculation
-      const gstRate = 10;
-      const gstAmount = Math.round(basePrice * gstRate / 100);
-      const rate = Math.round(basePrice - gstAmount);
-
-      const paymentAmountForRazorpay = getRazorpayAmount(payableAmount);
-      const invoicePayableAmount = isGrowPlanTestPayment
-        ? paymentAmountForRazorpay
-        : payableAmount;
+      /*
+        FINAL PAYLOAD RULES
+        - Subscribe, upgrade, downgrade, and renewal all send full createSellerInvoice.
+        - This function never sends createSellerInvoice: {}.
+        - Downgrade creates a new Scheduled row with tableId: "".
+        - Upgrade uses current tableId only when the old plan started today; otherwise tableId: "".
+        - Renewal keeps current tableId.
+      */
 
       const safeValue = (value, fallback = "NA") => {
         if (value === undefined || value === null) return fallback;
         const text = String(value).trim();
         return text.length > 0 ? text : fallback;
+      };
+
+      const toApiMidnightIso = (value) => {
+        if (!value) {
+          const now = new Date();
+          const yyyy = now.getFullYear();
+          const mm = String(now.getMonth() + 1).padStart(2, "0");
+          const dd = String(now.getDate()).padStart(2, "0");
+          return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+        }
+
+        if (typeof value === "string") {
+          const datePart = value.includes("T") ? value.split("T")[0] : value;
+          const parts = datePart.split("-");
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}T00:00:00.000Z`;
+            }
+            return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}T00:00:00.000Z`;
+          }
+        }
+
+        const parsed = parseDateSafe(value) || new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          return toApiMidnightIso(new Date());
+        }
+
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+        const dd = String(parsed.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+      };
+
+      const addDaysToApiIso = (value, days) => {
+        const parsed = parseDateSafe(value) || new Date(value);
+        parsed.setDate(parsed.getDate() + days);
+        return toApiMidnightIso(parsed);
+      };
+
+      const calculateEndApiIso = (startIso, duration) => {
+        const start = parseDateSafe(startIso) || new Date(startIso);
+        const months =
+          duration === "12 Months" ? 12 :
+            duration === "6 Months" ? 6 :
+              duration === "3 Months" ? 3 : 1;
+
+        const end = new Date(start.getTime());
+        end.setMonth(end.getMonth() + months);
+        end.setDate(end.getDate() - 1);
+        return toApiMidnightIso(end);
       };
 
       const sName = safeValue(
@@ -595,8 +644,69 @@ const PlanReviewPage = () => {
       const sPhone = safeValue(
         sellerProfile?.phone ||
         resolveSellerPhone(),
-        "NA"
+        ""
       );
+
+      const selectedPlanId =
+        selectedPlan?.planId ||
+        selectedPlan?._id ||
+        selectedPlan?.id ||
+        "";
+
+      const currentTableId =
+        currentSubscription?.TableID ||
+        currentSubscription?.tableId ||
+        currentSubscription?._id ||
+        "";
+
+      const isOldStartedToday = currentSubscription && (() => {
+        const started = startOfDay(currentSubscription.startedDate || currentSubscription.startDate);
+        const today = startOfDay(new Date());
+        return Boolean(started && today && started.getTime() === today.getTime());
+      })();
+
+      let finalStartedDate = toApiMidnightIso(startDate);
+      let finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
+
+      if ((isDowngrade || isRenewal) && oldExpiry) {
+        finalStartedDate = addDaysToApiIso(oldExpiry, 1);
+        finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
+      }
+
+      const todayApi = toApiMidnightIso(new Date());
+      const finalIsScheduled = finalStartedDate > todayApi;
+      const statusStr = (isDowngrade || finalIsScheduled) ? "Scheduled" : "Active";
+
+      let tableIdToUse = "";
+      if (isRenewal) {
+        tableIdToUse = currentTableId;
+      } else if (isUpgrade && isOldStartedToday) {
+        tableIdToUse = currentTableId;
+      } else {
+        tableIdToUse = "";
+      }
+
+      const paymentAmountForRazorpay = getRazorpayAmount(payableAmount);
+      const invoicePayableAmount = isGrowPlanTestPayment
+        ? paymentAmountForRazorpay
+        : payableAmount;
+
+      const planNameLower = normalize(selectedPlan.name);
+
+      let invoiceRate = isGrowPlanTestPayment ? invoicePayableAmount : Math.round(totalPrice);
+      let invoiceAmount = invoiceRate;
+      let invoiceSubtotal = invoiceRate;
+      let invoiceCgst = 0;
+      let invoiceSgst = 0;
+
+      // Keep the old working Pro test invoice format.
+      if (isGrowPlanTestPayment && planNameLower === "pro") {
+        invoiceRate = 1799;
+        invoiceAmount = 1799;
+        invoiceSubtotal = 1799;
+        invoiceCgst = 100;
+        invoiceSgst = 100;
+      }
 
       const invoiceData = {
         invoiceDate: new Date().toISOString(),
@@ -606,14 +716,14 @@ const PlanReviewPage = () => {
         gstin: sGstin,
         item: selectedPlan.name,
         qty: 1,
-        rate: rate,
-        amount: rate,
-        subtotal: rate,
-        cgst: gstAmount / 2,
-        sgst: gstAmount / 2,
+        rate: invoiceRate,
+        amount: invoiceAmount,
+        subtotal: invoiceSubtotal,
+        cgst: invoiceCgst,
+        sgst: invoiceSgst,
         totalPayable: invoicePayableAmount,
         payments: {
-          wallet: isGrowPlanTestPayment ? 0 : walletUsedAmount,
+          wallet: isGrowPlanTestPayment ? 0 : Number(walletUsedAmount || 0),
           upi: invoicePayableAmount
         },
         transactionMethod: (useWallet && !isGrowPlanTestPayment && payableAmount === 0)
@@ -625,105 +735,14 @@ const PlanReviewPage = () => {
         originalPlanAmount: totalPrice
       };
 
-      const selStart = new Date(startDate);
-      const statusStr = isDowngrade ? "Scheduled" : (isScheduled ? "Scheduled" : "Active");
-
-      const currentTableId =
-        currentSubscription?.TableID ||
-        currentSubscription?.tableId ||
-        currentSubscription?._id ||
-        "";
-
-      const selectedPlanId =
-        selectedPlan?.planId ||
-        selectedPlan?._id ||
-        selectedPlan?.id ||
-        "";
-
-      // Old subscription "started today" => same-day upgrade, safe to overwrite in place.
-      const isOldStartedToday = currentSubscription && (() => {
-        const started = startOfDay(currentSubscription.startedDate || currentSubscription.startDate);
-        const today = startOfDay(new Date());
-        return Boolean(started && today && started.getTime() === today.getTime());
-      })();
-
-      console.log("[PlanReview] Debug before processSubscriptionOrder:", {
-        currentSubscription,
-        selectedPlan,
-        currentRank,
-        selectedRank,
-        isSamePlan,
-        isUpgrade,
-        isDowngrade,
-        isRenewal,
-        isScheduled,
-        oldEffectiveAmount,
-        usedAmount,
-        remainingAmount,
-        payableAmount
-      });
-
-      let tableIdToUse = "";
-
-      if (isRenewal) {
-        // Renewal: update the same subscription record.
-        tableIdToUse = currentTableId;
-      } else if (isUpgrade) {
-        if (isOldStartedToday) {
-          // Same-day upgrade: overwrite the just-created subscription, no split needed.
-          tableIdToUse = currentTableId;
-        } else if (currentTableId && oldExpiry && selStart <= oldExpiry) {
-          // Running upgrade: close out the old subscription the day before the new one starts,
-          // then create a brand new subscription record for the upgraded plan, matching Flutter mobile flow.
-          setProcessingMessage("Terminating previous subscription...");
-          const dayBefore = new Date(selStart.getTime());
-          dayBefore.setDate(dayBefore.getDate() - 1);
-
-          const endOldPayload = {
-            createSellerInvoice: {},
-            createSubscription: {
-              tableId: currentTableId,
-              planName: currentSubscription.planName || currentSubscription.plan || "",
-              planId: currentSubscription.planId || currentSubscription.id || "",
-              status: "Active",
-              email: sellerEmail,
-              startedDate: currentSubscription.startedDate || currentSubscription.startDate,
-              endedDate: dayBefore.toISOString(),
-              paymentId: currentSubscription.paymentId || "",
-              razorpayOrderId: currentSubscription.razorpayOrderId || currentSubscription.orderId || "",
-              sellerId: sellerId,
-              phone: currentSubscription.phone || sellerProfile?.phone || ""
-            },
-            referralUpdate: {
-              rewardEarned: 0,
-              rewardUsed: 0,
-              referralCode: ""
-            }
-          };
-
-          console.log("[PlanReview] Terminating old subscription payload:", endOldPayload);
-          await sellerService.processSubscriptionOrder(endOldPayload);
-          tableIdToUse = "";
-        } else {
-          tableIdToUse = "";
-        }
-      } else if (isDowngrade) {
-        // Downgrade: never touch the currently active subscription; schedule a new one.
-        tableIdToUse = "";
-      } else {
-        // Brand new subscription.
-        tableIdToUse = "";
-      }
-
-      // New upgraded/renewed/downgraded/subscribed record
       const subPayload = {
         tableId: tableIdToUse,
         planName: selectedPlan.name,
         planId: selectedPlanId,
         status: statusStr,
         email: sellerEmail,
-        startedDate: selStart.toISOString(),
-        endedDate: endDateObj.toISOString(),
+        startedDate: finalStartedDate,
+        endedDate: finalEndedDate,
         paymentId: paymentId,
         razorpayOrderId: razorpayOrderId,
         sellerId: sellerId,
@@ -734,9 +753,9 @@ const PlanReviewPage = () => {
       };
 
       const referralPayload = {
-        rewardEarned: discountAmount,
+        rewardEarned: isCouponApplied ? discountAmount : 0,
         rewardUsed: isCouponApplied ? 1 : 0,
-        referralCode: appliedCouponCode || ""
+        referralCode: isCouponApplied ? (appliedCouponCode || "") : ""
       };
 
       const storePayload = {
@@ -746,7 +765,8 @@ const PlanReviewPage = () => {
       };
 
       console.log("[PlanReview] tableId used:", tableIdToUse);
-      console.log("[processSubscriptionOrder payload]", storePayload);
+      console.log("[processSubscriptionOrder FINAL payload]", storePayload);
+
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
 
@@ -759,14 +779,15 @@ const PlanReviewPage = () => {
 
       const successToastMsg = isDowngrade
         ? "Downgrade scheduled successfully"
-        : isScheduled
+        : finalIsScheduled
           ? "Plan scheduled successfully"
           : isRenewal
             ? "Plan renewed successfully"
-            : "Plan upgraded successfully";
+            : isUpgrade
+              ? "Plan upgraded successfully"
+              : "Subscription successful";
       showToast(successToastMsg);
 
-      // Re-fetch in background silently
       try {
         await sellerService.getSellerSubscription(sellerEmail);
         await sellerService.checkWalletBalance(sellerId);

@@ -3258,25 +3258,220 @@ export const getCampaignProductPerformance = async (arg, prodId) => {
   return response.data;
 };
 
-export const createSellerCampaign = async (payload) => {
-  if (payload && payload.sellerId) {
-    payload.sellerId = getOrResolveSellerId(payload.sellerId);
+const buildCampaignApiPayload = (payload = {}) => {
+  const averageCPCSource =
+    payload.averageCPC !== undefined && payload.averageCPC !== null && payload.averageCPC !== ""
+      ? payload.averageCPC
+      : payload.cpcGoal;
+
+  const averageCPCNumber = Number(averageCPCSource);
+  const averageCPC =
+    Number.isFinite(averageCPCNumber) && averageCPCNumber > 0
+      ? averageCPCNumber
+      : 5;
+
+  const dailyBudgetNumber = Number(payload.dailyBudget);
+
+  const productId = Array.isArray(payload.productId)
+    ? payload.productId.map(String).map((id) => id.trim()).filter(Boolean).join(",")
+    : String(payload.productId || payload.productIds || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .join(",");
+
+  const priorityScoreNumber = Number(payload.priorityScore);
+
+  const finalPayload = {
+    sellerId: getOrResolveSellerId(payload.sellerId),
+    campaignType: payload.campaignType || "Smart",
+    productId,
+    dailyBudget: dailyBudgetNumber,
+    startDateTime: payload.startDateTime,
+    endDateTime: payload.endDateTime,
+    title: String(payload.title || payload.campaignName || "").trim(),
+    priorityScore:
+      Number.isFinite(priorityScoreNumber) && priorityScoreNumber > 0
+        ? priorityScoreNumber
+        : Math.round((dailyBudgetNumber * 50) + (averageCPC * 2)),
+    averageCPC,
+    campaignstatus: payload.campaignstatus || payload.status || "Active"
+  };
+
+  // Preserve campaign identifiers when present on the incoming payload. These are
+  // required for updateSellerCampaign so the backend can locate the existing
+  // campaign record. They are absent on create payloads, so this is a no-op there
+  // and never affects createSellerCampaign.
+  const resolvedId = payload._id || payload.tableId || payload.TableID || payload.rowId || "";
+  const resolvedTableId = payload.tableId || payload.TableID || payload._id || payload.rowId || "";
+  const resolvedCampaignId = payload.campaignId || payload.CampaignID || payload.campaignID || "";
+
+  if (resolvedId) finalPayload._id = resolvedId;
+  if (resolvedTableId) finalPayload.tableId = resolvedTableId;
+  if (resolvedCampaignId) finalPayload.campaignId = resolvedCampaignId;
+
+  // Backend rejects cpcGoal/null. Keep the API payload exactly in backend format.
+  delete finalPayload.cpcGoal;
+  delete finalPayload.productIds;
+  delete finalPayload.status;
+  delete finalPayload.active;
+
+  const missingFields = Object.entries(finalPayload)
+    .filter(([key, value]) => {
+      if (["dailyBudget", "priorityScore", "averageCPC"].includes(key)) {
+        const num = Number(value);
+        return !Number.isFinite(num) || num <= 0;
+      }
+      if (["_id", "tableId", "campaignId"].includes(key)) {
+        // Identifiers are optional at this stage (create payloads never carry them);
+        // updateSellerCampaign enforces their presence separately before the request fires.
+        return false;
+      }
+      return value === undefined || value === null || value === "";
+    })
+    .map(([key]) => key);
+
+  if (missingFields.length) {
+    throw new Error(`Missing required campaign fields: ${missingFields.join(", ")}`);
   }
-  const response = await axios.post(`${API_BASE_URL}/newSellerCampaign`, payload, {
+
+  return finalPayload;
+};
+
+export const createSellerCampaign = async (payload = {}) => {
+  const finalPayload = buildCampaignApiPayload(payload);
+
+  _svcLog("[CampaignCreate] final newSellerCampaign payload:", finalPayload);
+
+  const response = await axios.post(NEW_SELLER_CAMPAIGN_API, finalPayload, {
     headers: { "Content-Type": "application/json" },
     timeout: 15000,
   });
+
+  _svcLog("[CampaignCreate] response:", response.data);
+
+  const statusStr = String(response.data?.status || "").trim().toLowerCase();
+  const FAILURE_STATUSES = new Set(["failed", "fail", "error"]);
+
+  if (FAILURE_STATUSES.has(statusStr)) {
+    const backendMessage =
+      response.data?.message?.message ||
+      response.data?.message?.error ||
+      response.data?.message ||
+      "Failed to create campaign.";
+    const errorText = typeof backendMessage === "string" ? backendMessage : JSON.stringify(backendMessage);
+    _svcErr("[CampaignCreate] failed:", errorText, response.data);
+    throw new Error(errorText);
+  }
+
   return response.data;
 };
 
-export const updateSellerCampaign = async (payload) => {
-  if (payload && payload.sellerId) {
-    payload.sellerId = getOrResolveSellerId(payload.sellerId);
+export const updateSellerCampaign = async (payload = {}) => {
+  // Backend updateSellerCampaign follows Flutter app contract:
+  // it expects the existing campaign row id as `TableId` (capital T).
+  // Create campaign must not use this function.
+  const tableId = String(
+    payload.TableId ||
+    payload.tableId ||
+    payload.TableID ||
+    payload._id ||
+    payload.rowId ||
+    ""
+  ).trim();
+
+  const averageCPCSource =
+    payload.averageCPC !== undefined &&
+      payload.averageCPC !== null &&
+      payload.averageCPC !== ""
+      ? payload.averageCPC
+      : payload.cpcGoal;
+
+  const averageCPCNumber = Number(averageCPCSource);
+  const averageCPC =
+    Number.isFinite(averageCPCNumber) && averageCPCNumber > 0
+      ? averageCPCNumber
+      : 5;
+
+  const dailyBudgetNumber = Number(payload.dailyBudget);
+  const priorityScoreNumber = Number(payload.priorityScore);
+
+  const productId = Array.isArray(payload.productId)
+    ? payload.productId
+      .map(String)
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .join(",")
+    : String(payload.productId || payload.productIds || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .join(",");
+
+  const finalPayload = {
+    TableId: tableId,
+    sellerId: getOrResolveSellerId(payload.sellerId),
+    campaignType: payload.campaignType || "Smart",
+    productId,
+    dailyBudget: dailyBudgetNumber,
+    startDateTime: payload.startDateTime,
+    endDateTime: payload.endDateTime,
+    title: String(payload.title || payload.campaignName || "").trim(),
+    averageCPC,
+    priorityScore:
+      Number.isFinite(priorityScoreNumber) && priorityScoreNumber > 0
+        ? priorityScoreNumber
+        : Math.round((dailyBudgetNumber * 50) + (averageCPC * 2))
+  };
+
+  // Keep update payload identical to working Flutter/Postman contract.
+  delete finalPayload._id;
+  delete finalPayload.tableId;
+  delete finalPayload.TableID;
+  delete finalPayload.campaignId;
+  delete finalPayload.cpcGoal;
+  delete finalPayload.status;
+  delete finalPayload.active;
+  delete finalPayload.productIds;
+  delete finalPayload.campaignstatus;
+
+  const missingFields = Object.entries(finalPayload)
+    .filter(([key, value]) => {
+      if (["dailyBudget", "priorityScore", "averageCPC"].includes(key)) {
+        const num = Number(value);
+        return !Number.isFinite(num) || num <= 0;
+      }
+      return value === undefined || value === null || value === "";
+    })
+    .map(([key]) => key);
+
+  if (missingFields.length) {
+    throw new Error(`Missing required campaign update fields: ${missingFields.join(", ")}`);
   }
-  const response = await axios.post(`${API_BASE_URL}/updateSellerCampaign`, payload, {
+
+  _svcLog("[CampaignUpdate] final updateSellerCampaign payload:", finalPayload);
+
+  const response = await axios.post(UPDATE_SELLER_CAMPAIGN_API, finalPayload, {
     headers: { "Content-Type": "application/json" },
     timeout: 15000,
   });
+
+  _svcLog("[CampaignUpdate] response:", response.data);
+
+  const statusStr = String(response.data?.status || "").trim().toLowerCase();
+  const FAILURE_STATUSES = new Set(["failed", "fail", "error"]);
+
+  if (FAILURE_STATUSES.has(statusStr)) {
+    const backendMessage =
+      response.data?.message?.message ||
+      response.data?.message?.error ||
+      response.data?.message ||
+      "Failed to update campaign.";
+    const errorText = typeof backendMessage === "string" ? backendMessage : JSON.stringify(backendMessage);
+    _svcErr("[CampaignUpdate] failed:", errorText, response.data);
+    throw new Error(errorText);
+  }
+
   return response.data;
 };
 
@@ -3953,7 +4148,7 @@ export const referralCheck = fetchReferralCheck;
 export const createRazorPayOrder = async (params) => {
   const response = await axios.post(`${API_BASE_URL}/createRazorpayOrder`, params, {
     headers: { "Content-Type": "application/json" },
-    timeout: 15000,
+    timeout: 20000,
   });
   return response.data;
 };
@@ -3977,7 +4172,8 @@ export const createSubscription = async (params) => {
 };
 
 export const processSubscriptionOrder = async (payload) => {
-  const url = `${SELLER_FUNCTIONS_BASE_URL}/processSubscriptionOrder`;
+  // Subscription order API must use the same base as create/verify Razorpay.
+  const url = `${API_BASE_URL}/processSubscriptionOrder`;
   try {
     console.log("[processSubscriptionOrder] request url", url);
     console.log("[processSubscriptionOrder] payload:", payload);
@@ -4433,7 +4629,10 @@ export const walletService = {
   },
 
   createRazorpayOrder: async (payload) => {
-    const res = await axios.post(`${API_BASE_URL}/createRazorpayOrder`, payload);
+    const res = await axios.post(`${API_BASE_URL}/createRazorpayOrder`, payload, {
+      headers: { "Content-Type": "application/json" },
+      timeout: 20000,
+    });
     return res.data;
   },
 

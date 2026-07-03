@@ -644,7 +644,9 @@
 }
 
 @keyframes gp-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes gp-fade-up {
@@ -652,6 +654,7 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -662,6 +665,7 @@
   .plans-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
   .grow-plan-footer-content {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
