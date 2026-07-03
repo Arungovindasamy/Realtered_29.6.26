@@ -4164,7 +4164,7 @@ export const verifyRazorpayPayment = async (params) => {
 };
 
 export const createSubscription = async (params) => {
-  const response = await axios.post(`${API_BASE_URL}/processSubscriptionOrder`, params, {
+  const response = await axios.post(`${SELLER_FUNCTIONS_BASE_URL}/processSubscriptionOrder`, params, {
     headers: { "Content-Type": "application/json" },
     timeout: 15000,
   });
@@ -4172,8 +4172,7 @@ export const createSubscription = async (params) => {
 };
 
 export const processSubscriptionOrder = async (payload) => {
-  // Subscription order API must use the same base as create/verify Razorpay.
-  const url = `${API_BASE_URL}/processSubscriptionOrder`;
+  const url = "https://haatzaseller.com/_functions/processSubscriptionOrder";
   try {
     console.log("[processSubscriptionOrder] request url", url);
     console.log("[processSubscriptionOrder] payload:", payload);

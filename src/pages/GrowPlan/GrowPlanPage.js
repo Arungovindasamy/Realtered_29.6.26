@@ -149,38 +149,55 @@ const formatPlanDate = (dateValue) => {
 const getLatestSubscription = (orders) => {
   if (!Array.isArray(orders) || orders.length === 0) return null;
 
-  const parseDate = (val) => {
-    if (!val) return 0;
-    const dateObj = parseDateSafe(val);
-    return dateObj ? dateObj.getTime() : 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const parseDate = (value) => {
+    if (!value) return null;
+    const d = parseDateSafe(value) || new Date(value);
+    return isNaN(d.getTime()) ? null : d;
   };
 
-  const getSubTimestamp = (sub) => {
-    const created = sub.createdDate || sub.createdAt || sub._createdDate || sub._createdAt;
-    if (created) {
-      const ts = parseDate(created);
-      if (ts > 0) return ts;
-    }
-    const payment = sub.paymentDate || sub.paidAt || sub.paymentAt || sub.transactionDate;
-    if (payment) {
-      const ts = parseDate(payment);
-      if (ts > 0) return ts;
-    }
-    const start = sub.startDate || sub.startedDate || sub.startAt;
-    if (start) {
-      const ts = parseDate(start);
-      if (ts > 0) return ts;
-    }
-    const end = sub.endDate || sub.endedDate || sub.expiryDate || sub.expiredOn || sub.validTill;
-    if (end) {
-      const ts = parseDate(end);
-      if (ts > 0) return ts;
-    }
-    return 0;
+  const getDateTime = (sub) => {
+    const d = parseDate(
+      sub?.startedDate ||
+      sub?.startDate ||
+      sub?.endedDate ||
+      sub?.endDate ||
+      sub?.createdDate ||
+      sub?.createdAt ||
+      0
+    );
+    return d ? d.getTime() : 0;
   };
 
-  const sorted = [...orders].sort((a, b) => getSubTimestamp(b) - getSubTimestamp(a));
-  return sorted[0];
+  const isActiveNow = (sub) => {
+    const status = String(sub?.status || "").toLowerCase();
+    const start = parseDate(sub?.startedDate || sub?.startDate);
+    const end = parseDate(sub?.endedDate || sub?.endDate);
+    if (!start || !end) return false;
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    return status === "active" && today >= start && today <= end;
+  };
+
+  const activeNow = orders.find(isActiveNow);
+  if (activeNow) return activeNow;
+
+  const active = orders.find(
+    (sub) => String(sub?.status || "").toLowerCase() === "active"
+  );
+  if (active) return active;
+
+  const scheduled = orders
+    .filter((sub) => String(sub?.status || "").toLowerCase() === "scheduled")
+    .sort((a, b) => getDateTime(b) - getDateTime(a))[0];
+
+  if (scheduled) return scheduled;
+
+  return [...orders].sort((a, b) => getDateTime(b) - getDateTime(a))[0];
 };
 
 const asArray = (value) => {
@@ -208,20 +225,7 @@ const extractPlans = (response) => {
 
 const extractSubscriptionOrders = (response) => {
   const data = response?.data ?? response;
-  const orders =
-    data?.message?.orders ??
-    data?.message?.subscriptions ??
-    data?.message?.data?.orders ??
-    data?.message?.data?.subscriptions ??
-    data?.orders ??
-    data?.subscriptions ??
-    data?.data?.orders ??
-    data?.data?.subscriptions ??
-    data?.data?.message?.orders ??
-    data?.data?.message?.subscriptions ??
-    data?.message ??
-    [];
-  return asArray(orders);
+  return data?.message?.orders || [];
 };
 
 const extractWalletBalance = (response) => {
@@ -246,7 +250,7 @@ const getDurationMultiplier = (duration) => {
   return 1;
 };
 
-const getPlanRankLocal = (planName) => {
+const getPlanRank = (planName) => {
   const name = String(planName || "").trim().toLowerCase();
   if (name.includes("enterprise")) return 3;
   if (name.includes("pro")) return 2;
@@ -339,6 +343,7 @@ const GrowPlanPage = () => {
   // Active/Existing Subscription status
   const [plansRes, setPlansRes] = useState(null);
   const [subscriptionRes, setSubscriptionRes] = useState(null);
+  const [subscriptionList, setSubscriptionList] = useState([]);
 
   // Warning & Toast notification states
   const [subscriptionWarning, setSubscriptionWarning] = useState("");
@@ -448,9 +453,11 @@ const GrowPlanPage = () => {
           setSubscriptionRes(subRes);
           console.log("[GrowPlanPage] Seller Subscription Response", subRes);
           const orders = extractSubscriptionOrders(subRes);
-          if (orders.length > 0) {
-            setActiveSubscription(getLatestSubscription(orders));
-          }
+          setSubscriptionList(orders);
+          const latest = getLatestSubscription(orders);
+          console.log("[GrowPlan] subscription orders:", orders);
+          console.log("[GrowPlan] selected current subscription:", latest);
+          setActiveSubscription(latest);
         } catch (err) {
           console.error("[GrowPlanPage] Seller Subscription API error:", err);
         }
@@ -484,8 +491,8 @@ const GrowPlanPage = () => {
 
   const currentPlanName = currentSubscription?.planName || currentSubscription?.plan || currentSubscription?.subscriptionPlan;
   const expiryDate =
-    currentSubscription?.endDate ||
     currentSubscription?.endedDate ||
+    currentSubscription?.endDate ||
     currentSubscription?.expiryDate ||
     currentSubscription?.expiredOn ||
     currentSubscription?.validTill;
@@ -493,29 +500,65 @@ const GrowPlanPage = () => {
   const expiryDateObj = parseDateSafe(expiryDate);
   const isExpired = expiryDateObj ? expiryDateObj < new Date() : false;
 
-  const isSamePlan = (plan) =>
-    plan && normalize(plan.name || plan.planName) === normalize(currentPlanName);
+  const scheduledSubscription = subscriptionList.find(
+    (s) => String(s?.status || "").toLowerCase() === "scheduled"
+  );
+
+  const isScheduledPlan = (plan) =>
+    Boolean(
+      scheduledSubscription &&
+      normalize(plan?.name || plan?.planName) === normalize(scheduledSubscription.planName || scheduledSubscription.plan)
+    );
+
+  const isCurrentActivePlan = (plan) =>
+    Boolean(
+      currentSubscription &&
+      String(currentSubscription.status || "").toLowerCase() === "active" &&
+      normalize(plan?.name || plan?.planName) === normalize(currentSubscription.planName || currentSubscription.plan)
+    );
+
+  const isSelectedDowngrade = Boolean(
+    selectedPlan &&
+    currentSubscription &&
+    String(currentSubscription.status || "").toLowerCase() === "active" &&
+    getPlanRank(selectedPlan.name || selectedPlan.planName) <
+    getPlanRank(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan)
+  );
 
   function getPlanActionLabel(selectedPlan, currentSubscription) {
     if (!selectedPlan) return "";
 
-    if (!currentSubscription) return "Subscribe Plan";
+    const currentExpiry =
+      currentSubscription?.endedDate ||
+      currentSubscription?.endDate ||
+      currentSubscription?.expiryDate ||
+      currentSubscription?.expiredOn ||
+      currentSubscription?.validTill;
+    const currentExpiryDate = parseDateSafe(currentExpiry);
+    const isCurrentExpired = currentExpiryDate ? currentExpiryDate < new Date() : false;
 
-    const isSame =
-      selectedPlan.id === currentSubscription.planId ||
-      normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan);
+    if (!currentSubscription || isCurrentExpired) {
+      const currentRank = getPlanRank(
+        currentSubscription?.planName ||
+        currentSubscription?.plan ||
+        currentSubscription?.subscriptionPlan
+      );
+      const selectedRank = getPlanRank(selectedPlan.name || selectedPlan.planName);
+      return currentSubscription && selectedRank === currentRank ? "Renew Plan" : "Subscribe Plan";
+    }
 
-    const now = new Date();
-    const endDate = (currentSubscription.endedDate || currentSubscription.endDate)
-      ? parseDateSafe(currentSubscription.endedDate || currentSubscription.endDate)
-      : null;
+    const currentRank = getPlanRank(
+      currentSubscription?.planName ||
+      currentSubscription?.plan ||
+      currentSubscription?.subscriptionPlan
+    );
+    const selectedRank = getPlanRank(selectedPlan.name || selectedPlan.planName);
 
-    const isExpired = endDate ? endDate < now : false;
+    if (selectedRank > currentRank) return "Upgrade Plan";
+    if (selectedRank < currentRank) return "Schedule Downgrade";
+    if (selectedRank === currentRank) return "Current Plan";
 
-    if (isSame && isExpired) return "Renew Plan";
-    if (isSame && !isExpired) return "Current Plan";
-
-    return "Upgrade Plan";
+    return "Subscribe Plan";
   }
 
   function isActionDisabled(selectedPlan, currentSubscription, isProcessing) {
@@ -532,6 +575,7 @@ const GrowPlanPage = () => {
         selectedPlan,
         currentSubscription,
         plans,
+        subscriptionList,
         walletBalance: availableBalance
       }
     });
@@ -813,13 +857,10 @@ const GrowPlanPage = () => {
       /*
         FINAL PAYLOAD RULES
         - This function sends ONLY the final selected-plan payload.
-        - It never sends createSellerInvoice: {}.
-        - createSellerInvoice: {} was the old termination payload and caused the wrong request.
+        - It always sends populated createSellerInvoice data.
+        - The old termination-style empty invoice payload caused the wrong request.
         - Subscribe/new/upgrade/renew/downgrade all send a full invoice.
       */
-
-      const isTestPayment = true; // FORCE_GROW_PLAN_ONE_RUPEE_TEST
-      const planNameLower = normalize(selectedPlan?.name);
 
       const safeText = (value, fallback = "NA") => {
         if (value === undefined || value === null) return fallback;
@@ -870,13 +911,31 @@ const GrowPlanPage = () => {
         return toApiMidnightIso(parsed);
       };
 
+      const toApiEndOfDayIso = (value) => {
+        const startIso = toApiMidnightIso(value);
+        return `${startIso.split("T")[0]}T23:59:59.999Z`;
+      };
+
       const calculateEndApiIso = (startIso, duration) => {
         const start = parseDateSafe(startIso) || new Date(startIso);
         const monthsToAdd = getDurationMonths(duration);
         const end = new Date(start.getTime());
         end.setMonth(end.getMonth() + monthsToAdd);
         end.setDate(end.getDate() - 1);
-        return toApiMidnightIso(end);
+        return toApiEndOfDayIso(end);
+      };
+
+      const getGstInclusiveBreakup = (total) => {
+        const totalValue = Number(total || 0);
+        const taxableAmount = Math.round(totalValue / 1.10);
+        const taxAmount = Math.round(((totalValue - taxableAmount) / 2) * 100) / 100;
+        return {
+          rate: taxableAmount,
+          amount: taxableAmount,
+          subtotal: taxableAmount,
+          cgst: taxAmount,
+          sgst: taxAmount
+        };
       };
 
       const sellerName = safeText(
@@ -928,76 +987,45 @@ const GrowPlanPage = () => {
 
       const isOldActive = oldExpiry ? oldExpiry >= new Date() : false;
 
-      const currentPlanRank = getPlanRankLocal(
+      const currentPlanRank = getPlanRank(
         currentSubscription?.planName ||
         currentSubscription?.plan ||
         currentSubscription?.subscriptionPlan
       );
-      const selectedPlanRank = getPlanRankLocal(selectedPlan?.name);
+      const selectedPlanRank = getPlanRank(selectedPlan?.name);
 
       const isSamePlan = Boolean(currentSubscription && selectedPlanRank === currentPlanRank);
       const isRenewPlan = Boolean(currentSubscription && isSamePlan);
       const isUpgradePlan = Boolean(currentSubscription && isOldActive && selectedPlanRank > currentPlanRank);
       const isDowngradePlan = Boolean(currentSubscription && isOldActive && selectedPlanRank < currentPlanRank);
-
-      const isSameStartDate = currentSubscription && (() => {
-        const oldStart = parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate);
-        const today = new Date();
-        return oldStart && oldStart.toDateString() === today.toDateString();
-      })();
+      const flowType = isDowngradePlan
+        ? "downgrade"
+        : isUpgradePlan
+          ? "upgrade"
+          : isRenewPlan
+            ? "renew"
+            : "subscribe";
 
       let finalStartedDate = toApiMidnightIso(startedDate || new Date());
-      let finalEndedDate = endedDate ? toApiMidnightIso(endedDate) : calculateEndApiIso(finalStartedDate, planDuration);
+      let finalEndedDate = endedDate ? toApiEndOfDayIso(endedDate) : calculateEndApiIso(finalStartedDate, planDuration);
 
-      // Downgrade and active-plan renewal must start after current plan expiry.
-      if ((isDowngradePlan || (isRenewPlan && isOldActive)) && oldExpiry) {
+      // Downgrade and renewal must start after current plan expiry.
+      if ((isDowngradePlan || isRenewPlan) && oldExpiry) {
         finalStartedDate = addDaysToApiIso(oldExpiry, 1);
         finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
       }
 
-      const todayApi = toApiMidnightIso(new Date());
-      const isFutureStart = finalStartedDate > todayApi;
-
-      const subStatus = (isDowngradePlan || isFutureStart) ? "Scheduled" : "Active";
+      const subStatus = isDowngradePlan ? "Scheduled" : "Active";
 
       const tableIdToUse =
-        (isRenewPlan || (isUpgradePlan && isSameStartDate))
+        (isUpgradePlan || isRenewPlan)
           ? currentTableId
           : "";
 
-      // Test-mode invoice amount rule:
-      // Pro uses legacy working values. Growth/Enterprise use the ₹1 working payload.
-      let rate;
-      let amount;
-      let subtotal;
-      let cgst;
-      let sgst;
-      let totalPayable;
-
-      if (isTestPayment) {
-        if (planNameLower === "pro") {
-          rate = 1799;
-          amount = 1799;
-          subtotal = 1799;
-          cgst = 100;
-          sgst = 100;
-          totalPayable = 1;
-        } else {
-          rate = 1;
-          amount = 1;
-          subtotal = 1;
-          cgst = 0;
-          sgst = 0;
-          totalPayable = 1;
-        }
-      } else {
-        rate = Math.round(originalTotal);
-        amount = rate;
-        subtotal = rate;
-        cgst = 0;
-        sgst = 0;
-        totalPayable = totalPayableAmount;
-      }
+      const totalPayable = Number(totalPayableAmount || 0);
+      const walletPaymentAmount = Number(walletUsedAmount || 0);
+      const upiPaymentAmount = totalPayable;
+      const gstBreakup = getGstInclusiveBreakup(totalPayable);
 
       const invoiceData = {
         invoiceDate: new Date().toISOString(),
@@ -1007,23 +1035,21 @@ const GrowPlanPage = () => {
         gstin: sellerGstin,
         item: selectedPlan.name,
         qty: 1,
-        rate,
-        amount,
-        subtotal,
-        cgst,
-        sgst,
+        rate: gstBreakup.rate,
+        amount: gstBreakup.amount,
+        subtotal: gstBreakup.subtotal,
+        cgst: gstBreakup.cgst,
+        sgst: gstBreakup.sgst,
         totalPayable,
         payments: {
-          wallet: isTestPayment ? 0 : Number(walletUsedAmount || 0),
-          upi: totalPayable
+          wallet: walletPaymentAmount,
+          upi: upiPaymentAmount
         },
-        transactionMethod: (useWallet && !isTestPayment && totalPayableAmount === 0)
+        transactionMethod: walletPaymentAmount > 0 && upiPaymentAmount === 0
           ? "Wallet"
-          : (useWallet && !isTestPayment)
+          : walletPaymentAmount > 0 && upiPaymentAmount > 0
             ? "Wallet, UPI"
-            : "UPI",
-        isTestPayment,
-        originalPlanAmount: originalTotal
+            : "UPI"
       };
 
       const subPayload = {
@@ -1037,10 +1063,7 @@ const GrowPlanPage = () => {
         paymentId: paymentId,
         razorpayOrderId: orderId,
         sellerId: sellerId,
-        phone: sellerPhone,
-        isTestPayment,
-        amount: totalPayable,
-        originalPlanAmount: originalTotal
+        phone: sellerPhone
       };
 
       const referralPayload = {
@@ -1055,7 +1078,10 @@ const GrowPlanPage = () => {
         referralUpdate: referralPayload
       };
 
-      console.log("[processSubscriptionOrder FINAL payload]", storePayload);
+      console.log("[GrowPlan] flowType:", flowType);
+      console.log("[GrowPlan] tableIdToUse:", tableIdToUse);
+      console.log("[GrowPlan] createSubscription payload:", subPayload);
+      console.log("[GrowPlan] processSubscriptionOrder payload:", storePayload);
 
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
@@ -1083,9 +1109,11 @@ const GrowPlanPage = () => {
         const subRes = await sellerService.getSellerSubscription(sellerEmail);
         setSubscriptionRes(subRes);
         const orders = extractSubscriptionOrders(subRes);
-        if (orders.length > 0) {
-          setCurrentSubscription(getLatestSubscription(orders));
-        }
+        setSubscriptionList(orders);
+        const latest = getLatestSubscription(orders);
+        console.log("[GrowPlan] subscription orders:", orders);
+        console.log("[GrowPlan] selected current subscription:", latest);
+        setCurrentSubscription(latest);
       } catch (err) {
         console.error("[GrowPlanPage] Refetch subscription failed:", err);
       }
@@ -1197,11 +1225,24 @@ const GrowPlanPage = () => {
                 <span className="plan-duration"> / month</span>
               </div>
 
-              {isSamePlan(plan) && expiryDate && (
-                <div className={isExpired ? "current-plan-expired-text" : "current-plan-active-text"}>
-                  {isExpired
-                    ? `Current plan expired on: ${formatPlanDate(expiryDate)}`
-                    : `Current plan active till: ${formatPlanDate(expiryDate)}`}
+              {isCurrentActivePlan(plan) && (
+                <div className="plan-status-banner active">
+                  Current plan active till: {formatPlanDate(
+                    currentSubscription.endedDate ||
+                    currentSubscription.endDate ||
+                    currentSubscription.expiryDate ||
+                    currentSubscription.expiredOn ||
+                    currentSubscription.validTill
+                  )}
+                </div>
+              )}
+
+              {isScheduledPlan(plan) && (
+                <div className="plan-status-banner scheduled">
+                  Scheduled plan starts on: {formatPlanDate(
+                    scheduledSubscription.startedDate ||
+                    scheduledSubscription.startDate
+                  )}
                 </div>
               )}
 
@@ -1299,20 +1340,24 @@ const GrowPlanPage = () => {
                   Current plan: {currentPlanName}
                 </div>
               )}
+              {isSelectedDowngrade && scheduledSubscription && (
+                <div className="scheduled-plan-action-note">
+                  You already have a scheduled plan: {scheduledSubscription.planName || scheduledSubscription.plan} starts on {formatPlanDate(
+                    scheduledSubscription.startedDate ||
+                    scheduledSubscription.startDate
+                  )}
+                </div>
+              )}
             </div>
-            <div className="grow-plan-sticky-right">
+            <div className="grow-plan-sticky-right grow-plan-action-bar">
               <button
                 onClick={handlePlanAction}
                 disabled={isActionDisabled(selectedPlan, currentSubscription, false)}
-                className="btn-review-upgrade-cta"
+                className="btn-review-upgrade-cta grow-plan-action-btn"
                 style={{
-                  minWidth: "160px",
-                  height: "46px",
                   backgroundColor: isActionDisabled(selectedPlan, currentSubscription, false) ? "#cbd5e1" : "#2962ff",
                   color: "#ffffff",
-                  fontWeight: "700",
                   border: "none",
-                  borderRadius: "8px",
                   cursor: isActionDisabled(selectedPlan, currentSubscription, false) ? "not-allowed" : "pointer"
                 }}
               >

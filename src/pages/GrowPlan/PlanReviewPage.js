@@ -282,7 +282,13 @@ const PlanReviewPage = () => {
   // Expiry date parse. Mobile app treats the plan end date as inclusive.
   const currentPlanName = currentSubscription?.planName || currentSubscription?.plan;
   const oldStart = currentSubscription ? parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate) : null;
-  const oldExpiry = currentSubscription ? parseDateSafe(currentSubscription.endedDate || currentSubscription.endDate) : null;
+  const oldExpiry = currentSubscription ? parseDateSafe(
+    currentSubscription.endedDate ||
+    currentSubscription.endDate ||
+    currentSubscription.expiryDate ||
+    currentSubscription.expiredOn ||
+    currentSubscription.validTill
+  ) : null;
   const todayOnly = startOfDay(new Date());
   const oldStartOnly = oldStart ? startOfDay(oldStart) : null;
   const oldExpiryOnly = oldExpiry ? startOfDay(oldExpiry) : null;
@@ -310,10 +316,18 @@ const PlanReviewPage = () => {
   const isSamePlan = Boolean(currentSubscription && selectedRank === currentRank);
   const isUpgrade = Boolean(currentSubscription && isOldActive && selectedRank > currentRank);
   const isDowngrade = Boolean(currentSubscription && isOldActive && selectedRank < currentRank);
-  const isRenewal = Boolean(currentSubscription && isOldActive && isSamePlan);
-  const isNewSubscription = !currentSubscription || !isOldActive;
+  const isRenewal = Boolean(currentSubscription && isSamePlan);
+  const isActiveRenewal = Boolean(isRenewal && isOldActive);
+  const isNewSubscription = !currentSubscription || (!isOldActive && !isRenewal);
+  const flowType = isDowngrade
+    ? "downgrade"
+    : isUpgrade
+      ? "upgrade"
+      : isRenewal
+        ? "renew"
+        : "subscribe";
 
-  const renewalAllowed = isRenewal ? isWithinRenewalWindow(currentSubscription, oldExpiry) : true;
+  const renewalAllowed = isActiveRenewal ? isWithinRenewalWindow(currentSubscription, oldExpiry) : true;
 
   // Force start date for downgrade / renewal: current plan expiry + 1 day.
   // Manual date selection is disabled for these cases (datepicker click is a no-op).
@@ -554,10 +568,9 @@ const PlanReviewPage = () => {
       /*
         FINAL PAYLOAD RULES
         - Subscribe, upgrade, downgrade, and renewal all send full createSellerInvoice.
-        - This function never sends createSellerInvoice: {}.
+        - This function always sends populated createSellerInvoice data.
         - Downgrade creates a new Scheduled row with tableId: "".
-        - Upgrade uses current tableId only when the old plan started today; otherwise tableId: "".
-        - Renewal keeps current tableId.
+        - Upgrade and renewal keep current tableId.
       */
 
       const safeValue = (value, fallback = "NA") => {
@@ -597,6 +610,11 @@ const PlanReviewPage = () => {
         return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
       };
 
+      const toApiEndOfDayIso = (value) => {
+        const startIso = toApiMidnightIso(value);
+        return `${startIso.split("T")[0]}T23:59:59.999Z`;
+      };
+
       const addDaysToApiIso = (value, days) => {
         const parsed = parseDateSafe(value) || new Date(value);
         parsed.setDate(parsed.getDate() + days);
@@ -613,7 +631,20 @@ const PlanReviewPage = () => {
         const end = new Date(start.getTime());
         end.setMonth(end.getMonth() + months);
         end.setDate(end.getDate() - 1);
-        return toApiMidnightIso(end);
+        return toApiEndOfDayIso(end);
+      };
+
+      const getGstInclusiveBreakup = (total) => {
+        const totalValue = Number(total || 0);
+        const taxableAmount = Math.round(totalValue / 1.10);
+        const taxAmount = Math.round(((totalValue - taxableAmount) / 2) * 100) / 100;
+        return {
+          rate: taxableAmount,
+          amount: taxableAmount,
+          subtotal: taxableAmount,
+          cgst: taxAmount,
+          sgst: taxAmount
+        };
       };
 
       const sName = safeValue(
@@ -659,12 +690,6 @@ const PlanReviewPage = () => {
         currentSubscription?._id ||
         "";
 
-      const isOldStartedToday = currentSubscription && (() => {
-        const started = startOfDay(currentSubscription.startedDate || currentSubscription.startDate);
-        const today = startOfDay(new Date());
-        return Boolean(started && today && started.getTime() === today.getTime());
-      })();
-
       let finalStartedDate = toApiMidnightIso(startDate);
       let finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
 
@@ -673,40 +698,14 @@ const PlanReviewPage = () => {
         finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
       }
 
-      const todayApi = toApiMidnightIso(new Date());
-      const finalIsScheduled = finalStartedDate > todayApi;
-      const statusStr = (isDowngrade || finalIsScheduled) ? "Scheduled" : "Active";
+      const statusStr = isDowngrade ? "Scheduled" : "Active";
 
-      let tableIdToUse = "";
-      if (isRenewal) {
-        tableIdToUse = currentTableId;
-      } else if (isUpgrade && isOldStartedToday) {
-        tableIdToUse = currentTableId;
-      } else {
-        tableIdToUse = "";
-      }
+      const tableIdToUse = (isUpgrade || isRenewal) ? currentTableId : "";
 
-      const paymentAmountForRazorpay = getRazorpayAmount(payableAmount);
-      const invoicePayableAmount = isGrowPlanTestPayment
-        ? paymentAmountForRazorpay
-        : payableAmount;
-
-      const planNameLower = normalize(selectedPlan.name);
-
-      let invoiceRate = isGrowPlanTestPayment ? invoicePayableAmount : Math.round(totalPrice);
-      let invoiceAmount = invoiceRate;
-      let invoiceSubtotal = invoiceRate;
-      let invoiceCgst = 0;
-      let invoiceSgst = 0;
-
-      // Keep the old working Pro test invoice format.
-      if (isGrowPlanTestPayment && planNameLower === "pro") {
-        invoiceRate = 1799;
-        invoiceAmount = 1799;
-        invoiceSubtotal = 1799;
-        invoiceCgst = 100;
-        invoiceSgst = 100;
-      }
+      const invoicePayableAmount = payableAmount;
+      const walletPaymentAmount = Number(walletUsedAmount || 0);
+      const upiPaymentAmount = invoicePayableAmount;
+      const gstBreakup = getGstInclusiveBreakup(invoicePayableAmount);
 
       const invoiceData = {
         invoiceDate: new Date().toISOString(),
@@ -716,23 +715,21 @@ const PlanReviewPage = () => {
         gstin: sGstin,
         item: selectedPlan.name,
         qty: 1,
-        rate: invoiceRate,
-        amount: invoiceAmount,
-        subtotal: invoiceSubtotal,
-        cgst: invoiceCgst,
-        sgst: invoiceSgst,
+        rate: gstBreakup.rate,
+        amount: gstBreakup.amount,
+        subtotal: gstBreakup.subtotal,
+        cgst: gstBreakup.cgst,
+        sgst: gstBreakup.sgst,
         totalPayable: invoicePayableAmount,
         payments: {
-          wallet: isGrowPlanTestPayment ? 0 : Number(walletUsedAmount || 0),
-          upi: invoicePayableAmount
+          wallet: walletPaymentAmount,
+          upi: upiPaymentAmount
         },
-        transactionMethod: (useWallet && !isGrowPlanTestPayment && payableAmount === 0)
+        transactionMethod: walletPaymentAmount > 0 && upiPaymentAmount === 0
           ? "Wallet"
-          : (useWallet && !isGrowPlanTestPayment)
+          : walletPaymentAmount > 0 && upiPaymentAmount > 0
             ? "Wallet, UPI"
-            : "UPI",
-        isTestPayment: isGrowPlanTestPayment,
-        originalPlanAmount: totalPrice
+            : "UPI"
       };
 
       const subPayload = {
@@ -746,10 +743,7 @@ const PlanReviewPage = () => {
         paymentId: paymentId,
         razorpayOrderId: razorpayOrderId,
         sellerId: sellerId,
-        phone: sPhone,
-        isTestPayment: isGrowPlanTestPayment,
-        amount: invoicePayableAmount,
-        originalPlanAmount: totalPrice
+        phone: sPhone
       };
 
       const referralPayload = {
@@ -764,8 +758,10 @@ const PlanReviewPage = () => {
         referralUpdate: referralPayload
       };
 
-      console.log("[PlanReview] tableId used:", tableIdToUse);
-      console.log("[processSubscriptionOrder FINAL payload]", storePayload);
+      console.log("[GrowPlan] flowType:", flowType);
+      console.log("[GrowPlan] tableIdToUse:", tableIdToUse);
+      console.log("[GrowPlan] createSubscription payload:", subPayload);
+      console.log("[GrowPlan] processSubscriptionOrder payload:", storePayload);
 
       const storeRes = await sellerService.processSubscriptionOrder(storePayload);
       console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
@@ -779,13 +775,11 @@ const PlanReviewPage = () => {
 
       const successToastMsg = isDowngrade
         ? "Downgrade scheduled successfully"
-        : finalIsScheduled
-          ? "Plan scheduled successfully"
-          : isRenewal
-            ? "Plan renewed successfully"
-            : isUpgrade
-              ? "Plan upgraded successfully"
-              : "Subscription successful";
+        : isRenewal
+          ? "Plan renewed successfully"
+          : isUpgrade
+            ? "Plan upgraded successfully"
+            : "Subscription successful";
       showToast(successToastMsg);
 
       try {
@@ -960,7 +954,27 @@ const PlanReviewPage = () => {
   const hasMoreFeatures = selectedPlan.features?.length > 6;
 
   return (
-    <div className="grow-plan-container">
+    <>
+      {isProcessingPayment && (
+        <>
+          <div className="payment-overlay" aria-hidden="true" />
+          <div
+            className="payment-loader"
+            data-status={processingMessage || "processing"}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="payment-progress-title"
+            aria-describedby="payment-progress-description"
+          >
+            <div className="grow-loading-spinner" />
+            <h2 id="payment-progress-title">Payment in Progress...</h2>
+            <p id="payment-progress-description">Please complete the payment in the Razorpay window.</p>
+            <p>Do not refresh or close this page.</p>
+          </div>
+        </>
+      )}
+
+      <div className="grow-plan-container" inert={isProcessingPayment ? "" : undefined} aria-busy={isProcessingPayment}>
       {/* Toast Notification */}
       {toastMessage && (
         <div className="grow-success-banner" style={{ background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46", padding: "12px", borderRadius: "8px", marginBottom: "20px", display: "flex", justifyContent: "space-between", border: "1px solid" }}>
@@ -986,13 +1000,6 @@ const PlanReviewPage = () => {
         <div className="grow-error-banner" style={{ margin: "20px 0" }}>
           <span>{errorMsg}</span>
           <button onClick={() => setErrorMsg(null)}>&times;</button>
-        </div>
-      )}
-
-      {isProcessingPayment && (
-        <div className="grow-loading-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(255, 255, 255, 0.8)", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", zIndex: 1000 }}>
-          <div className="grow-loading-spinner" />
-          <p style={{ marginTop: "10px", fontWeight: "600" }}>{processingMessage || "Processing..."}</p>
         </div>
       )}
 
@@ -1341,7 +1348,8 @@ const PlanReviewPage = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
 

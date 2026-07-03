@@ -1714,7 +1714,7 @@ const CreateCampaignPage = () => {
                     <input
                       type="number"
                       step="0.01"
-                      placeholder="Set your target cost per click."
+                      placeholder="Set your target CPC."
                       value={cpcGoal}
                       onChange={(e) => setCpcGoal(e.target.value)}
                       className="cpc-input"
