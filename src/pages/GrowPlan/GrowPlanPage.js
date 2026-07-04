@@ -135,11 +135,128 @@ const parseDateSafe = (dateVal) => {
   return null;
 };
 
+// ─── Inclusive end-date helpers ─────────────────────────────────────────────
+// Business rule: subscription end date is INCLUSIVE.
+// endDate = startDate + durationMonths - 1 day
+//
+// These helpers parse dates using local year/month/day components (never a
+// direct timezone-shifting toISOString parse) so date-only business logic
+// can't drift by a day depending on the browser's timezone.
+
+// Parses yyyy-mm-dd, dd-mm-yyyy, ISO strings, or Date objects into a Date
+// object representing local midnight of that calendar day.
+const parseLocalDate = (value) => {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  if (typeof value === "string") {
+    const datePart = value.includes("T") ? value.split("T")[0] : value;
+    const parts = datePart.split("-");
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // yyyy-mm-dd
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          return new Date(year, month, day);
+        }
+      } else {
+        // dd-mm-yyyy
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        let year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          if (year < 100) year += 2000;
+          return new Date(year, month, day);
+        }
+      }
+    }
+  }
+
+  const fallback = parseDateSafe(value);
+  if (fallback && !isNaN(fallback.getTime())) {
+    return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
+  }
+  return null;
+};
+
+const getDurationMonthsCount = (duration) => {
+  if (duration === "12 Months") return 12;
+  if (duration === "6 Months") return 6;
+  if (duration === "3 Months") return 3;
+  return 1;
+};
+
+// endDate = startDate + durationMonths - 1 day (inclusive end date business rule)
+const calculateInclusiveEndDate = (startDateVal, duration) => {
+  const start = parseLocalDate(startDateVal) || parseDateSafe(startDateVal) || new Date(startDateVal);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  end.setMonth(end.getMonth() + getDurationMonthsCount(duration));
+  end.setDate(end.getDate() - 1);
+  return end;
+};
+
+const toApiDateOnlyIso = (date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+};
+
+// Detects legacy/exclusive backend end dates (saved as the day AFTER the plan
+// should actually end) and converts them to the correct inclusive end date.
+// Records already saved correctly as inclusive are left untouched.
+//
+// Heuristic (per spec): if the raw end date falls on the same day-of-month as
+// the start date and is after the start date, it's an exclusive date and gets
+// shifted back by 1 day. Otherwise it's already inclusive.
+const getInclusiveEffectiveEndDate = (subscription) => {
+  if (!subscription) return null;
+
+  const start = parseLocalDate(subscription.startedDate || subscription.startDate);
+  const rawEnd = parseLocalDate(
+    subscription.endedDate ||
+    subscription.endDate ||
+    subscription.expiryDate ||
+    subscription.expiredOn ||
+    subscription.validTill
+  );
+
+  if (!rawEnd) return null;
+  if (!start) return rawEnd;
+
+  const isLikelyExclusive = rawEnd.getDate() === start.getDate() && rawEnd.getTime() > start.getTime();
+  if (!isLikelyExclusive) return rawEnd;
+
+  const corrected = new Date(rawEnd.getFullYear(), rawEnd.getMonth(), rawEnd.getDate());
+  corrected.setDate(corrected.getDate() - 1);
+  return corrected;
+};
+
 const formatPlanDate = (dateValue) => {
   if (!dateValue) return "";
   const date = parseDateSafe(dateValue);
   if (!date) return "";
   return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+  }).replace(/ /g, " ");
+};
+
+// "Active till" display for the current plan card — always shows the
+// corrected inclusive end date. Detects whether the backend record already
+// stores an inclusive date or a legacy exclusive one, and only shifts back
+// by 1 day when needed (never subtracts from an already-correct date).
+const formatCurrentPlanActiveTill = (subscription) => {
+  const effectiveEnd = getInclusiveEffectiveEndDate(subscription);
+  if (!effectiveEnd) return "";
+  return effectiveEnd.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "2-digit",
@@ -297,7 +414,6 @@ const GrowPlanPage = () => {
   const [viewState, setViewState] = useState("plans");
   const [plans, setPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [expandedPlans, setExpandedPlans] = useState({});
 
   // Mobile-Aligned States
   const [currentSubscription, setCurrentSubscription] = useState(null);
@@ -398,7 +514,6 @@ const GrowPlanPage = () => {
     };
     console.log("[GrowPlan] Selected Plan", storedPlan);
     setSelectedPlan(storedPlan);
-    //setIsFeaturesExpanded(false);
   };
 
   // Fetch plans, wallet balance, and active subscription on mount
@@ -427,13 +542,25 @@ const GrowPlanPage = () => {
       const finalPlans = mapPlansWithFeatures(planItems);
       setPlans(finalPlans);
 
-      // Pre-select Recommended Pro plan if available
-      const recommended = finalPlans.find(p => p.recommended || p.name === "Pro" || p.name === "pro" || p.planName === "Pro" || p.planName === "pro");
-      if (recommended) {
-        handleSelectPlan(recommended);
-      } else if (finalPlans.length > 0) {
-        handleSelectPlan(finalPlans[0]);
-      }
+      // Pre-select Recommended Pro plan only once, on first load. If the
+      // seller has already manually selected a plan (selectedPlan is not
+      // null), this must never override that choice.
+      setSelectedPlan((prev) => {
+        if (prev) return prev;
+
+        const recommended = finalPlans.find(
+          (p) => p.recommended || normalize(p.name) === "pro" || normalize(p.planName) === "pro"
+        );
+        const defaultPlan = recommended || finalPlans[0] || null;
+        if (!defaultPlan) return null;
+
+        return {
+          ...defaultPlan,
+          planId: defaultPlan._id || defaultPlan.id,
+          planName: defaultPlan.name,
+          amount: Number(defaultPlan.price)
+        };
+      });
 
       // 2. Fetch Wallet Balance
       console.log(`[GrowPlanPage] Fetching wallet balance... GET https://haatza.com/_functions/checkWalletBalance?sellerId=${sellerId}`);
@@ -528,31 +655,30 @@ const GrowPlanPage = () => {
   function getPlanActionLabel(selectedPlan, currentSubscription) {
     if (!selectedPlan) return "";
 
+    const currentStatus = String(currentSubscription?.status || "").toLowerCase();
+    const currentRank = getPlanRank(
+      currentSubscription?.planName ||
+      currentSubscription?.plan ||
+      currentSubscription?.subscriptionPlan
+    );
+
+    const selectedRank = getPlanRank(selectedPlan.name || selectedPlan.planName);
+
     const currentExpiry =
       currentSubscription?.endedDate ||
       currentSubscription?.endDate ||
       currentSubscription?.expiryDate ||
       currentSubscription?.expiredOn ||
       currentSubscription?.validTill;
-    const currentExpiryDate = parseDateSafe(currentExpiry);
-    const isCurrentExpired = currentExpiryDate ? currentExpiryDate < new Date() : false;
 
-    if (!currentSubscription || isCurrentExpired) {
-      const currentRank = getPlanRank(
-        currentSubscription?.planName ||
-        currentSubscription?.plan ||
-        currentSubscription?.subscriptionPlan
-      );
-      const selectedRank = getPlanRank(selectedPlan.name || selectedPlan.planName);
-      return currentSubscription && selectedRank === currentRank ? "Renew Plan" : "Subscribe Plan";
+    const expiryDate = parseDateSafe(currentExpiry);
+    const isExpired = expiryDate ? expiryDate < new Date() : false;
+    const hasActivePlan = currentSubscription && currentStatus === "active" && !isExpired;
+
+    if (!currentSubscription || !hasActivePlan) {
+      if (currentSubscription && selectedRank === currentRank) return "Renew Plan";
+      return "Subscribe Plan";
     }
-
-    const currentRank = getPlanRank(
-      currentSubscription?.planName ||
-      currentSubscription?.plan ||
-      currentSubscription?.subscriptionPlan
-    );
-    const selectedRank = getPlanRank(selectedPlan.name || selectedPlan.planName);
 
     if (selectedRank > currentRank) return "Upgrade Plan";
     if (selectedRank < currentRank) return "Schedule Downgrade";
@@ -570,15 +696,7 @@ const GrowPlanPage = () => {
 
   const handlePlanAction = () => {
     if (!selectedPlan) return;
-    navigate("/dashboard/growplan/review", {
-      state: {
-        selectedPlan,
-        currentSubscription,
-        plans,
-        subscriptionList,
-        walletBalance: availableBalance
-      }
-    });
+    navigate("/dashboard/growplan/review", { state: { selectedPlan, currentSubscription, plans, subscriptionList, walletBalance: availableBalance } });
   };
 
   // Development logs
@@ -634,25 +752,34 @@ const GrowPlanPage = () => {
     setWalletUsedAmount(walletUsed);
     setTotalPayableAmount(payable);
 
-    // 6. startedDate and endedDate
+    // 6. startedDate and endedDate (inclusive end-date business rule:
+    // endDate = startDate + durationMonths - 1 day)
     let startD = new Date();
     const isRenew = currentSubscription &&
       normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
 
     if (isRenew && isOldActive) {
-      startD = new Date(oldExpiry.getTime());
+      // Use the TRUE (inclusive) old expiry so legacy exclusive backend
+      // records don't push the renewal start date out by an extra day.
+      const effectiveOldEnd = getInclusiveEffectiveEndDate(currentSubscription) || oldExpiry;
+      startD = new Date(effectiveOldEnd.getTime());
       startD.setDate(startD.getDate() + 1);
     }
 
-    const startIso = startD.toISOString().split('.')[0] + 'Z';
+    const startIso = toApiDateOnlyIso(startD);
     setStartedDate(startIso);
 
-    const monthsToAdd = getDurationMonths(planDuration);
-    const endD = new Date(startD.getTime());
-    endD.setMonth(endD.getMonth() + monthsToAdd);
-    endD.setDate(endD.getDate() - 1);
-    const endIso = endD.toISOString().split('.')[0] + 'Z';
+    const calculatedEndDate = calculateInclusiveEndDate(startD, planDuration);
+    const endIso = toApiDateOnlyIso(calculatedEndDate);
     setEndedDate(endIso);
+
+    console.log("[GrowPlan Date Debug]", {
+      startDate: startIso,
+      planDuration,
+      calculatedEndDate: endIso,
+      apiStartedDate: startIso,
+      apiEndedDate: endIso
+    });
 
   }, [selectedPlan, currentSubscription, planDuration, useWallet, discountAmount, availableBalance]);
 
@@ -913,7 +1040,7 @@ const GrowPlanPage = () => {
 
       const toApiEndOfDayIso = (value) => {
         const startIso = toApiMidnightIso(value);
-        return `${startIso.split("T")[0]}T23:59:59.999Z`;
+        return `${startIso.split("T")[0]}T00:00:00.000Z`;
       };
 
       const calculateEndApiIso = (startIso, duration) => {
@@ -985,6 +1112,11 @@ const GrowPlanPage = () => {
         currentSubscription.validTill
       ) : null;
 
+      // Corrected (guaranteed inclusive) old expiry — used for computing the
+      // next plan's start date so legacy exclusive backend records don't push
+      // the next start date out by an extra day.
+      const effectiveOldExpiry = currentSubscription ? getInclusiveEffectiveEndDate(currentSubscription) : null;
+
       const isOldActive = oldExpiry ? oldExpiry >= new Date() : false;
 
       const currentPlanRank = getPlanRank(
@@ -1010,10 +1142,18 @@ const GrowPlanPage = () => {
       let finalEndedDate = endedDate ? toApiEndOfDayIso(endedDate) : calculateEndApiIso(finalStartedDate, planDuration);
 
       // Downgrade and renewal must start after current plan expiry.
-      if ((isDowngradePlan || isRenewPlan) && oldExpiry) {
-        finalStartedDate = addDaysToApiIso(oldExpiry, 1);
+      if ((isDowngradePlan || isRenewPlan) && effectiveOldExpiry) {
+        finalStartedDate = addDaysToApiIso(effectiveOldExpiry, 1);
         finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
       }
+
+      console.log("[GrowPlan Date Debug]", {
+        startDate: finalStartedDate,
+        planDuration,
+        calculatedEndDate: finalEndedDate,
+        apiStartedDate: finalStartedDate,
+        apiEndedDate: finalEndedDate
+      });
 
       const subStatus = isDowngradePlan ? "Scheduled" : "Active";
 
@@ -1191,16 +1331,7 @@ const GrowPlanPage = () => {
       <div className="plans-list">
         {plans.map((plan) => {
           const isSelected = selectedPlan?.id === plan.id;
-          //const featuresToShow = isFeaturesExpanded
-          //  ? plan.features
-          //  : plan.features?.slice(0, 5);
-          const isExpanded = !!expandedPlans[plan.id];
-          const featuresToShow = isExpanded
-            ? plan.features
-            : plan.features?.slice(0, 5);
-          const hasLongFeatures = plan.features?.length > 5;
-
-
+          const featuresToShow = plan.features || [];
 
           return (
             <div
@@ -1227,13 +1358,7 @@ const GrowPlanPage = () => {
 
               {isCurrentActivePlan(plan) && (
                 <div className="plan-status-banner active">
-                  Current plan active till: {formatPlanDate(
-                    currentSubscription.endedDate ||
-                    currentSubscription.endDate ||
-                    currentSubscription.expiryDate ||
-                    currentSubscription.expiredOn ||
-                    currentSubscription.validTill
-                  )}
+                  Current plan active till: {formatCurrentPlanActiveTill(currentSubscription)}
                 </div>
               )}
 
@@ -1246,59 +1371,17 @@ const GrowPlanPage = () => {
                 </div>
               )}
 
-
-
-              {/* {isSelected && (
-                <div className="plan-expanded-details">
-                  <div className="plan-divider" />
-                  <div className="plan-features-title">What's included:</div>
-                  <ul className="plan-features-list">
-                    {featuresToShow?.map((feat, idx) => (
-                      <li className="plan-feature-item" key={idx}>
-                        <CheckCircle2 size={16} className="feature-check-icon" />
-                        <span>{feat}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {hasLongFeatures && (
-                    <button
-                      className="btn-see-more-toggle"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsFeaturesExpanded(!isFeaturesExpanded);
-                      }}
-                    >
-                      {isFeaturesExpanded ? "See less" : "See more"}
-                    </button>
-                  )}
-                </div>
-              )} */}
-
               <div className="plan-expanded-details">
                 <div className="plan-divider" />
                 <div className="plan-features-title">What's included:</div>
                 <ul className="plan-features-list">
-                  {featuresToShow?.map((feat, idx) => (
+                  {(plan.features || []).map((feat, idx) => (
                     <li className="plan-feature-item" key={idx}>
                       <CheckCircle2 size={16} className="feature-check-icon" />
                       <span>{feat}</span>
                     </li>
                   ))}
                 </ul>
-                {hasLongFeatures && (
-                  <button
-                    className="btn-see-more-toggle"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpandedPlans((prev) => ({
-                        ...prev,
-                        [plan.id]: !prev[plan.id]
-                      }));
-                    }}
-                  >
-                    {isExpanded ? "See less" : "See more"}
-                  </button>
-                )}
               </div>
             </div>
           );

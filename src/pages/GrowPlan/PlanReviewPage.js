@@ -5,27 +5,12 @@ import { resolveSellerId, resolveSellerEmail, resolveSellerPhone } from "../../u
 import { sellerService } from "../../services/sellerService";
 import "./PlanReviewPage.css";
 
-// TEST MODE FOR QA: keep this true while testing all Grow Plan flows.
-// Razorpay will charge only ₹1, while the page still calculates the real
-// plan price, wallet adjustment, coupon discount, upgrade waive-off, and downgrade scheduling.
-// Set this to false before production release.
-const FORCE_GROW_PLAN_ONE_RUPEE_TEST = true;
-
-const IS_SUBSCRIPTION_TEST_PAYMENT =
-  FORCE_GROW_PLAN_ONE_RUPEE_TEST ||
-  process.env.REACT_APP_SUBSCRIPTION_TEST_PAYMENT === "true" ||
-  process.env.REACT_APP_GROW_PLAN_TEST_PAYMENT === "true";
-
-const isGrowPlanTestPayment = IS_SUBSCRIPTION_TEST_PAYMENT;
-
-const growPlanTestAmount = Number(
-  process.env.REACT_APP_GROW_PLAN_TEST_AMOUNT ||
-  1
-);
+// Test payment mode has been permanently disabled for production use.
+// Razorpay must always be charged the real calculated payable amount.
+const FORCE_GROW_PLAN_ONE_RUPEE_TEST = false;
 
 const getRazorpayAmount = (actualPayableAmount) => {
   const amount = Number(actualPayableAmount || 0);
-  if (isGrowPlanTestPayment) return growPlanTestAmount;
   return Math.round(amount);
 };
 
@@ -87,6 +72,109 @@ const parseDateSafe = (dateVal) => {
     }
   }
   return null;
+};
+
+// ─── Inclusive end-date helpers ─────────────────────────────────────────────
+// Business rule: subscription end date is INCLUSIVE.
+// endDate = startDate + durationMonths - 1 day
+//
+// These helpers parse dates using local year/month/day components (never a
+// direct timezone-shifting toISOString parse) so date-only business logic
+// can't drift by a day depending on the browser's timezone.
+
+// Parses yyyy-mm-dd, dd-mm-yyyy, ISO strings, or Date objects into a Date
+// object representing local midnight of that calendar day.
+const parseLocalDate = (value) => {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  if (typeof value === "string") {
+    const datePart = value.includes("T") ? value.split("T")[0] : value;
+    const parts = datePart.split("-");
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // yyyy-mm-dd
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          return new Date(year, month, day);
+        }
+      } else {
+        // dd-mm-yyyy
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        let year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          if (year < 100) year += 2000;
+          return new Date(year, month, day);
+        }
+      }
+    }
+  }
+
+  const fallback = parseDateSafe(value);
+  if (fallback && !isNaN(fallback.getTime())) {
+    return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
+  }
+  return null;
+};
+
+const getDurationMonthsCount = (duration) => {
+  if (duration === "12 Months") return 12;
+  if (duration === "6 Months") return 6;
+  if (duration === "3 Months") return 3;
+  return 1;
+};
+
+// endDate = startDate + durationMonths - 1 day (inclusive end date business rule)
+const calculateInclusiveEndDate = (startDateVal, duration) => {
+  const start = parseLocalDate(startDateVal) || parseDateSafe(startDateVal) || new Date(startDateVal);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  end.setMonth(end.getMonth() + getDurationMonthsCount(duration));
+  end.setDate(end.getDate() - 1);
+  return end;
+};
+
+const toApiDateOnlyIso = (date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+};
+
+// Detects legacy/exclusive backend end dates (saved as the day AFTER the plan
+// should actually end) and converts them to the correct inclusive end date.
+// Records already saved correctly as inclusive are left untouched.
+//
+// Heuristic (per spec): if the raw end date falls on the same day-of-month as
+// the start date and is after the start date, it's an exclusive date and gets
+// shifted back by 1 day. Otherwise it's already inclusive.
+const getInclusiveEffectiveEndDate = (subscription) => {
+  if (!subscription) return null;
+
+  const start = parseLocalDate(subscription.startedDate || subscription.startDate);
+  const rawEnd = parseLocalDate(
+    subscription.endedDate ||
+    subscription.endDate ||
+    subscription.expiryDate ||
+    subscription.expiredOn ||
+    subscription.validTill
+  );
+
+  if (!rawEnd) return null;
+  if (!start) return rawEnd;
+
+  const isLikelyExclusive = rawEnd.getDate() === start.getDate() && rawEnd.getTime() > start.getTime();
+  if (!isLikelyExclusive) return rawEnd;
+
+  const corrected = new Date(rawEnd.getFullYear(), rawEnd.getMonth(), rawEnd.getDate());
+  corrected.setDate(corrected.getDate() - 1);
+  return corrected;
 };
 
 // ─── Plan hierarchy helpers ────────────────────────────────────────────────
@@ -161,6 +249,26 @@ const startOfDay = (value) => {
   return copy;
 };
 
+// Mobile-app-style short date format, e.g. "04 Jul 26"
+const formatDisplayDate = (dateVal) => {
+  if (!dateVal) return "-";
+  const d = dateVal instanceof Date ? dateVal : parseDateSafe(dateVal);
+  if (!d || isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+  });
+};
+
+// Current Plan card End Date display — always shows the corrected inclusive
+// end date, regardless of whether the backend record was saved exclusively
+// (legacy) or inclusively (correct). Never subtracts twice.
+const formatCurrentPlanEndDate = (subscription) => {
+  const effectiveEnd = getInclusiveEffectiveEndDate(subscription);
+  return effectiveEnd ? formatDisplayDate(effectiveEnd) : "-";
+};
+
 const calculateOngoingPlanAdjustment = (currentSubscription, oldPlan, selectedStartDate) => {
   if (!currentSubscription || !oldPlan) return {
     oldEffectiveAmount: 0,
@@ -228,7 +336,7 @@ const PlanReviewPage = () => {
   const sellerEmail = resolveSellerEmail();
 
   // Retrieve state passed from React Router Link/navigate
-  const { selectedPlan, currentSubscription, walletBalance: initialWallet, plans } = location.state || {};
+  const { selectedPlan, currentSubscription, walletBalance: initialWallet, plans, subscriptionList } = location.state || {};
 
   // Setup component states
   const [startDate, setStartDate] = useState(() => {
@@ -253,7 +361,6 @@ const PlanReviewPage = () => {
   const [toastMessage, setToastMessage] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [sellerProfile, setSellerProfile] = useState(null);
-  const [isFeaturesExpanded, setIsFeaturesExpanded] = useState(false);
 
   console.log("[PlanReview] paymentStatus:", paymentStatus);
 
@@ -279,6 +386,14 @@ const PlanReviewPage = () => {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
+  // If wallet balance is unavailable, make sure the "use wallet" toggle can't stay on.
+  useEffect(() => {
+    if (walletBalance <= 0 && useWallet) {
+      setUseWallet(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletBalance]);
+
   // Expiry date parse. Mobile app treats the plan end date as inclusive.
   const currentPlanName = currentSubscription?.planName || currentSubscription?.plan;
   const oldStart = currentSubscription ? parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate) : null;
@@ -289,6 +404,9 @@ const PlanReviewPage = () => {
     currentSubscription.expiredOn ||
     currentSubscription.validTill
   ) : null;
+  // Effective (corrected-for-inclusivity) expiry — used whenever we need to
+  // derive a "next start date" from the current plan's true end date.
+  const effectiveOldExpiry = currentSubscription ? getInclusiveEffectiveEndDate(currentSubscription) : null;
   const todayOnly = startOfDay(new Date());
   const oldStartOnly = oldStart ? startOfDay(oldStart) : null;
   const oldExpiryOnly = oldExpiry ? startOfDay(oldExpiry) : null;
@@ -308,6 +426,12 @@ const PlanReviewPage = () => {
     p._id === currentSubscription?.planId ||
     normalize(p.name) === normalize(currentSubscription?.planName || currentSubscription?.plan)
   );
+
+  // Upcoming/scheduled plan (if any) for display on this page, from subscriptionList
+  // passed via navigate state from GrowPlanPage.
+  const scheduledSubscription = Array.isArray(subscriptionList)
+    ? subscriptionList.find((s) => normalize(s?.status) === "scheduled")
+    : null;
 
   // ─── Plan rank / upgrade / downgrade / renewal classification ───────────
   const currentRank = getPlanRank(currentSubscription?.planName || currentSubscription?.plan);
@@ -329,17 +453,27 @@ const PlanReviewPage = () => {
 
   const renewalAllowed = isActiveRenewal ? isWithinRenewalWindow(currentSubscription, oldExpiry) : true;
 
-  // Force start date for downgrade / renewal: current plan expiry + 1 day.
+  // Force start date for downgrade / renewal: current plan's TRUE (inclusive)
+  // expiry + 1 day. Uses effectiveOldExpiry so legacy exclusive backend
+  // records don't push the next start date out by an extra day.
   // Manual date selection is disabled for these cases (datepicker click is a no-op).
   useEffect(() => {
     if (!selectedPlan) return;
-    if ((isDowngrade || isRenewal) && oldExpiry) {
-      const forcedStart = new Date(oldExpiry.getTime());
+    if ((isDowngrade || isRenewal) && effectiveOldExpiry) {
+      const forcedStart = new Date(effectiveOldExpiry.getTime());
       forcedStart.setDate(forcedStart.getDate() + 1);
+      const calculatedEndDate = calculateInclusiveEndDate(forcedStart, planDuration);
+      console.log("[GrowPlan Date Debug]", {
+        startDate: toLocalYmd(forcedStart),
+        planDuration,
+        calculatedEndDate: toLocalYmd(calculatedEndDate),
+        apiStartedDate: toApiDateOnlyIso(forcedStart),
+        apiEndedDate: toApiDateOnlyIso(calculatedEndDate)
+      });
       setStartDate(toLocalYmd(forcedStart));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDowngrade, isRenewal, oldExpiry ? oldExpiry.getTime() : null, selectedPlan]);
+  }, [isDowngrade, isRenewal, effectiveOldExpiry ? effectiveOldExpiry.getTime() : null, selectedPlan]);
 
   // Start/End date constraints
   const getTodayYmd = () => {
@@ -457,6 +591,33 @@ const PlanReviewPage = () => {
     ? calculateOngoingPlanAdjustment(currentSubscription, oldPlan, startDate)
     : { oldEffectiveAmount: 0, usedAmount: 0, remainingAmount: 0 };
 
+  // ─── Upgrade duration eligibility (remaining value guard) ─────────────────
+  // Business rule: when upgrading from an active lower plan to a higher plan,
+  // only allow durations where the new plan's total price for that duration
+  // is >= the remaining value of the current active subscription.
+  // Does NOT apply to new subscription, renewal, same plan, or downgrade.
+  const DURATION_ORDER = ["1 Month", "3 Months", "6 Months", "12 Months"];
+
+  const getDurationTotalPrice = (duration) => basePrice * getDurationMultiplier(duration);
+
+  const isDurationAllowedForUpgrade = (duration) => {
+    if (!isUpgrade) return true;
+    return getDurationTotalPrice(duration) >= remainingAmount;
+  };
+
+  // If the currently selected duration becomes invalid for an upgrade
+  // (e.g. after remainingAmount recalculates), auto-switch to the first
+  // allowed duration in priority order.
+  useEffect(() => {
+    if (!isUpgrade) return;
+    if (isDurationAllowedForUpgrade(planDuration)) return;
+    const nextAllowed = DURATION_ORDER.find((d) => isDurationAllowedForUpgrade(d));
+    if (nextAllowed && nextAllowed !== planDuration) {
+      setPlanDuration(nextAllowed);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUpgrade, remainingAmount, basePrice, planDuration]);
+
   const payableBeforeWallet = Math.max(totalPrice - remainingAmount - discountAmount, 0);
   const walletUsedAmount = useWallet ? Math.min(walletBalance, payableBeforeWallet) : 0;
   const payableAmount = Math.max(payableBeforeWallet - walletUsedAmount, 0);
@@ -488,7 +649,7 @@ const PlanReviewPage = () => {
     return "Ready to subscribe?";
   };
 
-  const isCtaDisabled = isRenewal && !renewalAllowed;
+  const isCtaDisabled = (isRenewal && !renewalAllowed) || (isUpgrade && !isDurationAllowedForUpgrade(planDuration));
 
   // Toast helper
   const showToast = (msg) => {
@@ -612,13 +773,16 @@ const PlanReviewPage = () => {
 
       const toApiEndOfDayIso = (value) => {
         const startIso = toApiMidnightIso(value);
-        return `${startIso.split("T")[0]}T23:59:59.999Z`;
+        // Keep subscription end dates as date-only midnight UTC.
+        // Example: 04 Jul 26 + 1 Month => 03 Aug 26, not 04 Aug 26 in IST.
+        return `${startIso.split("T")[0]}T00:00:00.000Z`;
       };
 
       const addDaysToApiIso = (value, days) => {
         const parsed = parseDateSafe(value) || new Date(value);
-        parsed.setDate(parsed.getDate() + days);
-        return toApiMidnightIso(parsed);
+        const copy = new Date(parsed.getTime());
+        copy.setDate(copy.getDate() + days);
+        return toApiMidnightIso(copy);
       };
 
       const calculateEndApiIso = (startIso, duration) => {
@@ -693,19 +857,30 @@ const PlanReviewPage = () => {
       let finalStartedDate = toApiMidnightIso(startDate);
       let finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
 
-      if ((isDowngrade || isRenewal) && oldExpiry) {
-        finalStartedDate = addDaysToApiIso(oldExpiry, 1);
+      if ((isDowngrade || isRenewal) && effectiveOldExpiry) {
+        finalStartedDate = addDaysToApiIso(effectiveOldExpiry, 1);
         finalEndedDate = calculateEndApiIso(finalStartedDate, planDuration);
       }
+
+      console.log("[GrowPlan Date Debug]", {
+        startDate: finalStartedDate,
+        planDuration,
+        calculatedEndDate: finalEndedDate,
+        apiStartedDate: finalStartedDate,
+        apiEndedDate: finalEndedDate
+      });
 
       const statusStr = isDowngrade ? "Scheduled" : "Active";
 
       const tableIdToUse = (isUpgrade || isRenewal) ? currentTableId : "";
 
-      const invoicePayableAmount = payableAmount;
+      // Invoice totalPayable is the FULL order amount (after discount/upgrade
+      // waive-off, but BEFORE wallet is applied). wallet + upi must always sum
+      // to this value — matches what the backend expects.
+      const totalPayableBeforeWallet = payableBeforeWallet;
       const walletPaymentAmount = Number(walletUsedAmount || 0);
-      const upiPaymentAmount = invoicePayableAmount;
-      const gstBreakup = getGstInclusiveBreakup(invoicePayableAmount);
+      const upiPaymentAmount = Number(payableAmount || 0);
+      const gstBreakup = getGstInclusiveBreakup(totalPayableBeforeWallet);
 
       const invoiceData = {
         invoiceDate: new Date().toISOString(),
@@ -720,7 +895,7 @@ const PlanReviewPage = () => {
         subtotal: gstBreakup.subtotal,
         cgst: gstBreakup.cgst,
         sgst: gstBreakup.sgst,
-        totalPayable: invoicePayableAmount,
+        totalPayable: totalPayableBeforeWallet,
         payments: {
           wallet: walletPaymentAmount,
           upi: upiPaymentAmount
@@ -728,9 +903,12 @@ const PlanReviewPage = () => {
         transactionMethod: walletPaymentAmount > 0 && upiPaymentAmount === 0
           ? "Wallet"
           : walletPaymentAmount > 0 && upiPaymentAmount > 0
-            ? "Wallet, UPI"
+            ? "Wallet + UPI"
             : "UPI"
       };
+      // paidAmount = actual total collected on this order (wallet + upi/razorpay).
+      // payableAmount stays the post-wallet remainder (0 when wallet fully covers it).
+      const paidAmount = walletPaymentAmount + upiPaymentAmount;
 
       const subPayload = {
         tableId: tableIdToUse,
@@ -743,9 +921,11 @@ const PlanReviewPage = () => {
         paymentId: paymentId,
         razorpayOrderId: razorpayOrderId,
         sellerId: sellerId,
-        phone: sPhone
+        phone: sPhone,
+        amount: totalPrice,
+        payableAmount: payableAmount,
+        paidAmount: paidAmount
       };
-
       const referralPayload = {
         rewardEarned: isCouponApplied ? discountAmount : 0,
         rewardUsed: isCouponApplied ? 1 : 0,
@@ -819,18 +999,21 @@ const PlanReviewPage = () => {
       return;
     }
 
+    if (isUpgrade && !isDurationAllowedForUpgrade(planDuration)) {
+      setErrorMsg("Please select an eligible duration. Current plan remaining value is higher than this duration price.");
+      showToast("Please select an eligible duration. Current plan remaining value is higher than this duration price.");
+      return;
+    }
+
     paymentInProgressRef.current = true;
     setIsProcessingPayment(true);
     setPaymentStatus("processing");
     setErrorMsg(null);
 
     try {
-      // 0 payable bypass
-      if (!isGrowPlanTestPayment && payableAmount === 0 && walletUsedAmount > 0) {
-        await completeSubscriptionActivation(
-          "wallet_payment_" + Date.now(),
-          "wallet_order_" + Date.now()
-        );
+      // 0 payable bypass — wallet (and/or coupon) fully covers the payable amount.
+      if (payableAmount === 0) {
+        await completeSubscriptionActivation("WALLET_FULL_PAYMENT", null);
         return;
       }
 
@@ -949,9 +1132,8 @@ const PlanReviewPage = () => {
     return <Navigate to="/dashboard/growplan" replace />;
   }
 
-  // Features count limit
-  const featuresToShow = isFeaturesExpanded ? selectedPlan.features : selectedPlan.features?.slice(0, 6);
-  const hasMoreFeatures = selectedPlan.features?.length > 6;
+  // All plan features are always shown directly — no See More / See Less.
+  const featuresToShow = selectedPlan.features || selectedPlan.benefits || [];
 
   return (
     <>
@@ -975,379 +1157,409 @@ const PlanReviewPage = () => {
       )}
 
       <div className="grow-plan-container" inert={isProcessingPayment ? "" : undefined} aria-busy={isProcessingPayment}>
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="grow-success-banner" style={{ background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46", padding: "12px", borderRadius: "8px", marginBottom: "20px", display: "flex", justifyContent: "space-between", border: "1px solid" }}>
-          <span>{toastMessage}</span>
-          <button onClick={() => setToastMessage(null)} style={{ background: "none", border: "none", color: "#047857", cursor: "pointer", fontWeight: "bold" }}>&times;</button>
+        {/* Toast Notification */}
+        {toastMessage && (
+          <div className="grow-success-banner" style={{ background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46", padding: "12px", borderRadius: "8px", marginBottom: "20px", display: "flex", justifyContent: "space-between", border: "1px solid" }}>
+            <span>{toastMessage}</span>
+            <button onClick={() => setToastMessage(null)} style={{ background: "none", border: "none", color: "#047857", cursor: "pointer", fontWeight: "bold" }}>&times;</button>
+          </div>
+        )}
+
+        {/* breadcrumb */}
+        <div className="grow-plan-breadcrumb" style={{ textAlign: "left" }}>
+          <span>Dashboard</span> &gt; <span>Grow Plan</span> &gt; <span className="active">Plan Review</span>
         </div>
-      )}
 
-      {/* breadcrumb */}
-      <div className="grow-plan-breadcrumb" style={{ textAlign: "left" }}>
-        <span>Dashboard</span> &gt; <span>Grow Plan</span> &gt; <span className="active">Plan Review</span>
-      </div>
-
-      {/* Header */}
-      <div className="review-header-row" style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-        <button className="btn-back-plans" onClick={() => navigate("/dashboard/growplan")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center" }}>
-          <ChevronLeft size={24} />
-        </button>
-        <h1 style={{ margin: 0, fontSize: "24px", fontWeight: "700" }}>Plan Review</h1>
-      </div>
-
-      {errorMsg && (
-        <div className="grow-error-banner" style={{ margin: "20px 0" }}>
-          <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)}>&times;</button>
+        {/* Header */}
+        <div className="review-header-row" style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+          <button className="btn-back-plans" onClick={() => navigate("/dashboard/growplan")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center" }}>
+            <ChevronLeft size={24} />
+          </button>
+          <h1 style={{ margin: 0, fontSize: "24px", fontWeight: "700" }}>Plan Review</h1>
         </div>
-      )}
 
-      {/* Desktop 2-column Container */}
-      <div className="plan-review-desktop-layout">
-        {/* Left Column: Plan Card with Features */}
-        <div className="plan-review-left-card">
-          <h2 style={{ fontSize: "20px", fontWeight: "700", margin: "0 0 8px 0" }}>{selectedPlan.name}</h2>
-          <div style={{ fontSize: "26px", fontWeight: "800", color: "#1e293b", marginBottom: "16px" }}>
-            ₹{basePrice.toLocaleString("en-IN")} / month
+        {errorMsg && (
+          <div className="grow-error-banner" style={{ margin: "20px 0" }}>
+            <span>{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)}>&times;</button>
+          </div>
+        )}
+
+        {/* Desktop 2-column Container */}
+        <div className="plan-review-desktop-layout">
+          {/* Left Column: Plan Card with Features */}
+          <div className="plan-review-left-card">
+            <h2 style={{ fontSize: "20px", fontWeight: "700", margin: "0 0 8px 0" }}>{selectedPlan.name}</h2>
+            <div style={{ fontSize: "26px", fontWeight: "800", color: "#1e293b", marginBottom: "16px" }}>
+              ₹{basePrice.toLocaleString("en-IN")} / month
+            </div>
+
+            <div className="review-divider" />
+
+            <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#64748b", margin: "16px 0 10px 0" }}>What's included:</h3>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
+              {featuresToShow?.map((feature, i) => (
+                <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "14px", color: "#334155" }}>
+                  <CheckCircle2 size={18} style={{ color: "#10b981", flexShrink: 0, marginTop: "2px" }} />
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <div className="review-divider" />
+          {/* Right Column: Review Details & Summary Card */}
+          <div className="plan-review-right-card">
 
-          <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#64748b", margin: "16px 0 10px 0" }}>What's included:</h3>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
-            {featuresToShow?.map((feature, i) => (
-              <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "14px", color: "#334155" }}>
-                <CheckCircle2 size={18} style={{ color: "#10b981", flexShrink: 0, marginTop: "2px" }} />
-                <span>{feature}</span>
-              </li>
-            ))}
-          </ul>
-
-          {hasMoreFeatures && (
-            <button
-              onClick={() => setIsFeaturesExpanded(!isFeaturesExpanded)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#2962ff",
-                fontWeight: "600",
-                fontSize: "14px",
-                cursor: "pointer",
-                marginTop: "14px",
-                padding: 0,
+            {/* Current Plan card (mobile-app style) */}
+            {currentSubscription && (
+              <div style={{
+                border: "1px solid #e2e8f0",
+                borderRadius: "10px",
+                padding: "14px 16px",
+                marginBottom: "16px",
                 textAlign: "left"
-              }}
-            >
-              {isFeaturesExpanded ? "See Less" : "See More"}
-            </button>
-          )}
-        </div>
-
-        {/* Right Column: Review Details & Summary Card */}
-        <div className="plan-review-right-card">
-
-          {isDowngrade && (
-            <div className="grow-plan-test-mode-note" style={{
-              background: "#eff6ff",
-              border: "1px solid #bfdbfe",
-              color: "#1d4ed8",
-              padding: "12px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: "600",
-              marginBottom: "16px",
-              textAlign: "left"
-            }}>
-              Downgrade will start after your current plan ends.
-            </div>
-          )}
-
-          {isRenewal && !renewalAllowed && (
-            <div className="grow-plan-test-mode-note" style={{
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
-              color: "#b91c1c",
-              padding: "12px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: "600",
-              marginBottom: "16px",
-              textAlign: "left"
-            }}>
-              You can renew this plan only near expiry period.
-            </div>
-          )}
-
-          {/* 1. Start Date selector (Custom Datepicker Popover) */}
-          <div className="start-date-block" ref={datePickerRef} style={{ textAlign: "left" }}>
-            <label className="start-date-label">
-              Start Date : {isScheduled && <span className="scheduled-badge" style={{ marginLeft: "8px" }}>Scheduled Plan</span>}
-            </label>
-            <div style={{ position: "relative" }}>
-              <input
-                type="text"
-                readOnly
-                value={getFormattedStartDate()}
-                onClick={() => !isDatePickerLocked && setShowDatePicker(!showDatePicker)}
-                className="start-date-input"
-                style={isDatePickerLocked ? { cursor: "not-allowed", opacity: 0.75 } : undefined}
-              />
-              <svg
-                onClick={() => !isDatePickerLocked && setShowDatePicker(!showDatePicker)}
-                style={{
-                  position: "absolute",
-                  right: "16px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  width: "20px",
-                  height: "20px",
-                  cursor: isDatePickerLocked ? "not-allowed" : "pointer",
-                  color: "#64748b"
-                }}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-
-              {showDatePicker && !isDatePickerLocked && (
-                <div className="date-picker-popover">
-                  <div className="calendar-header">
-                    <button type="button" onClick={handlePrevMonth} className="calendar-nav-btn">&lt;</button>
-                    <span className="calendar-month-year">{MONTH_NAMES[viewMonth]} {viewYear}</span>
-                    <button type="button" onClick={handleNextMonth} className="calendar-nav-btn">&gt;</button>
-                  </div>
-                  <div className="calendar-weekdays">
-                    {WEEK_DAYS.map(day => (
-                      <div key={day} className="calendar-weekday">{day}</div>
-                    ))}
-                  </div>
-                  <div className="calendar-days-grid">
-                    {getCalendarDays().map((dayObj, index) => {
-                      const isDisabled = isDateDisabled(dayObj);
-                      const isSelected = startDate === `${dayObj.year}-${String(dayObj.month + 1).padStart(2, "0")}-${String(dayObj.day).padStart(2, "0")}`;
-                      const isCurrentDay = new Date().getDate() === dayObj.day && new Date().getMonth() === dayObj.month && new Date().getFullYear() === dayObj.year;
-
-                      return (
-                        <button
-                          key={index}
-                          type="button"
-                          disabled={isDisabled}
-                          onClick={() => handleSelectDate(dayObj)}
-                          className={`calendar-day-cell ${!dayObj.isCurrentMonth ? "other-month" : ""} ${isSelected ? "selected" : ""} ${isCurrentDay ? "today" : ""}`}
-                        >
-                          {dayObj.day}
-                        </button>
-                      );
-                    })}
-                  </div>
+              }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: "#64748b", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                  Current Plan
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="plan-summary-row">
+                  <span>Plan Name</span>
+                  <span>{currentPlanName || "-"}</span>
+                </div>
+                <div className="plan-summary-row">
+                  <span>Start Date</span>
+                  <span>{formatDisplayDate(oldStart)}</span>
+                </div>
+                <div className="plan-summary-row">
+                  <span>End Date</span>
+                  <span>{formatCurrentPlanEndDate(currentSubscription)}</span>
+                </div>
+                <div className="plan-summary-row">
+                  <span>Status</span>
+                  <span>{currentSubscription.status || "-"}</span>
+                </div>
+              </div>
+            )}
 
-          {/* 2. Summary details list */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", margin: "20px 0" }}>
-            <div className="plan-summary-row">
-              <span>Plan</span>
-              <span>{selectedPlan.name}</span>
-            </div>
+            {/* Upcoming / Scheduled Plan card, if one exists in subscriptionList */}
+            {scheduledSubscription && (
+              <div style={{
+                border: "1px solid #bfdbfe",
+                borderRadius: "10px",
+                padding: "14px 16px",
+                marginBottom: "16px",
+                textAlign: "left",
+                background: "#f8fbff"
+              }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: "#1d4ed8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                  Upcoming Plan
+                </div>
+                <div className="plan-summary-row">
+                  <span>Plan Name</span>
+                  <span>{scheduledSubscription.planName || scheduledSubscription.plan || "-"}</span>
+                </div>
+                <div className="plan-summary-row">
+                  <span>Start Date</span>
+                  <span>{formatDisplayDate(scheduledSubscription.startedDate || scheduledSubscription.startDate)}</span>
+                </div>
+                <div className="plan-summary-row">
+                  <span>End Date</span>
+                  <span>{formatCurrentPlanEndDate(scheduledSubscription)}</span>
+                </div>
+                <div className="plan-summary-row">
+                  <span>Status</span>
+                  <span>{scheduledSubscription.status || "-"}</span>
+                </div>
+              </div>
+            )}
 
-            <div className="plan-summary-row">
-              <span>Plan Price</span>
-              <span>₹{basePrice.toLocaleString("en-IN")}</span>
-            </div>
+            {isDowngrade && (
+              <div className="grow-plan-test-mode-note" style={{
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                color: "#1d4ed8",
+                padding: "12px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: "600",
+                marginBottom: "16px",
+                textAlign: "left"
+              }}>
+                Downgrade will start after your current plan ends.
+              </div>
+            )}
 
-            <div className="plan-summary-row">
-              <span>Plan Duration</span>
-              <div className="duration-select-wrap" ref={durationRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowDurationModal(!showDurationModal)}
-                  className="duration-select-button"
+            {isRenewal && !renewalAllowed && (
+              <div className="grow-plan-test-mode-note" style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#b91c1c",
+                padding: "12px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: "600",
+                marginBottom: "16px",
+                textAlign: "left"
+              }}>
+                You can renew this plan only near expiry period.
+              </div>
+            )}
+
+            {/* 1. Start Date selector (Custom Datepicker Popover) */}
+            <div className="start-date-block" ref={datePickerRef} style={{ textAlign: "left" }}>
+              <label className="start-date-label">
+                Start Date : {isScheduled && <span className="scheduled-badge" style={{ marginLeft: "8px" }}>Scheduled Plan</span>}
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={getFormattedStartDate()}
+                  onClick={() => !isDatePickerLocked && setShowDatePicker(!showDatePicker)}
+                  className="start-date-input"
+                  style={isDatePickerLocked ? { cursor: "not-allowed", opacity: 0.75 } : undefined}
+                />
+                <svg
+                  onClick={() => !isDatePickerLocked && setShowDatePicker(!showDatePicker)}
+                  style={{
+                    position: "absolute",
+                    right: "16px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "20px",
+                    height: "20px",
+                    cursor: isDatePickerLocked ? "not-allowed" : "pointer",
+                    color: "#64748b"
+                  }}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
                 >
-                  {planDuration}
-                </button>
-                {showDurationModal && (
-                  <div className="duration-dropdown">
-                    {["1 Month", "3 Months", "6 Months", "12 Months"].map((dur) => (
-                      <button
-                        key={dur}
-                        type="button"
-                        onClick={() => {
-                          setPlanDuration(dur);
-                          setShowDurationModal(false);
-                        }}
-                        className={`duration-dropdown-option ${planDuration === dur ? "active" : ""}`}
-                      >
-                        {dur}
-                      </button>
-                    ))}
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+
+                {showDatePicker && !isDatePickerLocked && (
+                  <div className="date-picker-popover">
+                    <div className="calendar-header">
+                      <button type="button" onClick={handlePrevMonth} className="calendar-nav-btn">&lt;</button>
+                      <span className="calendar-month-year">{MONTH_NAMES[viewMonth]} {viewYear}</span>
+                      <button type="button" onClick={handleNextMonth} className="calendar-nav-btn">&gt;</button>
+                    </div>
+                    <div className="calendar-weekdays">
+                      {WEEK_DAYS.map(day => (
+                        <div key={day} className="calendar-weekday">{day}</div>
+                      ))}
+                    </div>
+                    <div className="calendar-days-grid">
+                      {getCalendarDays().map((dayObj, index) => {
+                        const isDisabled = isDateDisabled(dayObj);
+                        const isSelected = startDate === `${dayObj.year}-${String(dayObj.month + 1).padStart(2, "0")}-${String(dayObj.day).padStart(2, "0")}`;
+                        const isCurrentDay = new Date().getDate() === dayObj.day && new Date().getMonth() === dayObj.month && new Date().getFullYear() === dayObj.year;
+
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            disabled={isDisabled}
+                            onClick={() => handleSelectDate(dayObj)}
+                            className={`calendar-day-cell ${!dayObj.isCurrentMonth ? "other-month" : ""} ${isSelected ? "selected" : ""} ${isCurrentDay ? "today" : ""}`}
+                          >
+                            {dayObj.day}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="plan-summary-row">
-              <span>Total Price</span>
-              <span>₹{totalPrice.toLocaleString("en-IN")}</span>
+            {/* 2. Summary details list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", margin: "20px 0" }}>
+              <div className="plan-summary-row">
+                <span>Plan</span>
+                <span>{selectedPlan.name}</span>
+              </div>
+
+              <div className="plan-summary-row">
+                <span>Plan Price</span>
+                <span>₹{basePrice.toLocaleString("en-IN")}</span>
+              </div>
+
+              <div className="plan-summary-row">
+                <span>Plan Duration</span>
+                <div className="duration-select-wrap" ref={durationRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowDurationModal(!showDurationModal)}
+                    className="duration-select-button"
+                  >
+                    {planDuration}
+                  </button>
+                  {showDurationModal && (
+                    <div className="duration-dropdown">
+                      {DURATION_ORDER.map((dur) => {
+                        const durAllowed = isDurationAllowedForUpgrade(dur);
+                        return (
+                          <button
+                            key={dur}
+                            type="button"
+                            disabled={!durAllowed}
+                            onClick={() => {
+                              if (!durAllowed) return;
+                              setPlanDuration(dur);
+                              setShowDurationModal(false);
+                            }}
+                            className={`duration-dropdown-option ${planDuration === dur ? "active" : ""} ${!durAllowed ? "disabled-duration" : ""}`}
+                            style={!durAllowed ? { opacity: 0.45, pointerEvents: "none", cursor: "not-allowed" } : undefined}
+                          >
+                            {dur}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="plan-summary-row">
+                <span>Total Price</span>
+                <span>₹{totalPrice.toLocaleString("en-IN")}</span>
+              </div>
+
+              {/* Upgrade ongoing details — shown only for true upgrades */}
+              {isUpgrade && oldPlan && (
+                <>
+                  <div className="plan-summary-row">
+                    <span>Ongoing Plan</span>
+                    <span>{currentSubscription.planName || currentSubscription.plan}</span>
+                  </div>
+                  <div className="plan-summary-row">
+                    <span>Ongoing Plan Price</span>
+                    <span>₹{Number(oldPlan.price || 0).toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="plan-summary-row">
+                    <span>Ongoing Plan Spend Limit</span>
+                    <span>₹{oldEffectiveAmount.toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="plan-summary-row" style={{ color: "#dc2626" }}>
+                    <span>Ongoing Plan Used</span>
+                    <span>- ₹{usedAmount.toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="plan-summary-row" style={{ color: "#059669" }}>
+                    <span>Remaining Adjustment / Waive-off</span>
+                    <span>- ₹{remainingAmount.toLocaleString("en-IN")}</span>
+                  </div>
+                </>
+              )}
+
+              <div className="plan-summary-divider" style={{ borderTop: "1px solid #cbd5e1", margin: "12px 0" }} />
+
+              <div className="plan-summary-row payable-row" style={{ fontSize: "16px", fontWeight: "800" }}>
+                <span style={{ fontWeight: "700" }}>Payable Amount</span>
+                <span style={{ fontWeight: "800", color: "#1e293b" }}>₹{payableAmount.toLocaleString("en-IN")}</span>
+              </div>
             </div>
 
-            {/* Upgrade ongoing details — shown only for true upgrades */}
-            {isUpgrade && oldPlan && (
-              <>
-                <div className="plan-summary-row">
-                  <span>Ongoing Plan</span>
-                  <span>{currentSubscription.planName || currentSubscription.plan}</span>
-                </div>
-                <div className="plan-summary-row">
-                  <span>Ongoing Plan Price</span>
-                  <span>₹{Number(oldPlan.price || 0).toLocaleString("en-IN")}</span>
-                </div>
-                <div className="plan-summary-row">
-                  <span>Ongoing Plan Spend Limit</span>
-                  <span>₹{oldEffectiveAmount.toLocaleString("en-IN")}</span>
-                </div>
-                <div className="plan-summary-row" style={{ color: "#dc2626" }}>
-                  <span>Ongoing Plan Used</span>
-                  <span>- ₹{usedAmount.toLocaleString("en-IN")}</span>
-                </div>
-                <div className="plan-summary-row" style={{ color: "#059669" }}>
-                  <span>Remaining Adjustment / Waive-off</span>
-                  <span>- ₹{remainingAmount.toLocaleString("en-IN")}</span>
-                </div>
-              </>
+            {/* 3. Wallet Balance Section */}
+            <div className="wallet-redeem-box">
+              <input
+                type="checkbox"
+                id="walletRedeemCheck"
+                checked={useWallet}
+                onChange={(e) => setUseWallet(e.target.checked)}
+                disabled={walletBalance <= 0}
+                style={{ cursor: walletBalance <= 0 ? "not-allowed" : "pointer", width: "16px", height: "16px" }}
+              />
+              <label htmlFor="walletRedeemCheck" style={{ cursor: walletBalance <= 0 ? "not-allowed" : "pointer", fontSize: "14px", fontWeight: "600", color: "#334155", display: "flex", justifyContent: "space-between", width: "100%", margin: 0 }}>
+                <span>Redeem Wallet Balance?</span>
+                <span style={{ color: "#2962ff" }}>
+                  {useWallet
+                    ? `Used ₹${walletUsedAmount.toLocaleString("en-IN")}`
+                    : `Available ₹${Number(walletBalance).toLocaleString("en-IN")}`}
+                </span>
+              </label>
+            </div>
+
+            {/* 4. Referral Section */}
+            <div className="referral-box">
+              <input
+                type="text"
+                placeholder="Enter Referral Code"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+                disabled={checkingReferral || appliedCouponCode !== ""}
+              />
+              <button
+                type="button"
+                onClick={handleApplyReferral}
+                disabled={checkingReferral || !couponCode.trim() || appliedCouponCode !== ""}
+              >
+                {checkingReferral ? "Applying..." : "Apply"}
+              </button>
+            </div>
+            {referralMessage.text && (
+              <div style={{
+                marginTop: "-16px",
+                marginBottom: "16px",
+                fontSize: "12px",
+                fontWeight: "600",
+                color: referralMessage.type === "success" ? "#059669" : "#dc2626",
+                textAlign: "left"
+              }}>
+                {referralMessage.text}
+              </div>
             )}
 
-            <div className="plan-summary-divider" style={{ borderTop: "1px solid #cbd5e1", margin: "12px 0" }} />
-
-            <div className="plan-summary-row payable-row" style={{ fontSize: "16px", fontWeight: "800" }}>
-              <span style={{ fontWeight: "700" }}>Payable Amount</span>
-              <span style={{ fontWeight: "800", color: "#1e293b" }}>₹{payableAmount.toLocaleString("en-IN")}</span>
-            </div>
-          </div>
-
-          {/* 3. Wallet Balance Section */}
-          <div className="wallet-redeem-box">
-            <input
-              type="checkbox"
-              id="walletRedeemCheck"
-              checked={useWallet}
-              onChange={(e) => setUseWallet(e.target.checked)}
-              style={{ cursor: "pointer", width: "16px", height: "16px" }}
-            />
-            <label htmlFor="walletRedeemCheck" style={{ cursor: "pointer", fontSize: "14px", fontWeight: "600", color: "#334155", display: "flex", justifyContent: "space-between", width: "100%", margin: 0 }}>
-              <span>Redeem Wallet Balance?</span>
-              <span style={{ color: "#2962ff" }}>₹{walletBalance}</span>
-            </label>
-          </div>
-
-          {/* 4. Referral Section */}
-          <div className="referral-box">
-            <input
-              type="text"
-              placeholder="Enter Referral Code"
-              value={couponCode}
-              onChange={(e) => setCouponCode(e.target.value)}
-              disabled={checkingReferral || appliedCouponCode !== ""}
-            />
+            {/* 5. Upgrade Now / Submit Button */}
             <button
-              type="button"
-              onClick={handleApplyReferral}
-              disabled={checkingReferral || !couponCode.trim() || appliedCouponCode !== ""}
+              className="btn-review-upgrade-cta"
+              onClick={() => setShowConfirmModal(true)}
+              disabled={isCtaDisabled}
+              style={isCtaDisabled ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
             >
-              {checkingReferral ? "Applying..." : "Apply"}
+              {getCtaButtonText()}
             </button>
           </div>
-          {referralMessage.text && (
-            <div style={{
-              marginTop: "-16px",
-              marginBottom: "16px",
-              fontSize: "12px",
-              fontWeight: "600",
-              color: referralMessage.type === "success" ? "#059669" : "#dc2626",
-              textAlign: "left"
-            }}>
-              {referralMessage.text}
-            </div>
-          )}
-
-          {isGrowPlanTestPayment && (
-            <div className="grow-plan-test-mode-note" style={{
-              background: "#fffbeb",
-              border: "1px solid #fef3c7",
-              color: "#b45309",
-              padding: "12px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: "600",
-              marginBottom: "16px",
-              textAlign: "left"
-            }}>
-              Test mode enabled: You will be charged ₹{growPlanTestAmount}. Actual calculated payable after coupon/wallet/upgrade adjustment is ₹{payableAmount.toLocaleString("en-IN")}. Wallet selection is allowed for calculation testing, but real wallet debit is not sent in test mode.
-            </div>
-          )}
-
-          {/* 5. Upgrade Now / Submit Button */}
-          <button
-            className="btn-review-upgrade-cta"
-            onClick={() => setShowConfirmModal(true)}
-            disabled={isCtaDisabled}
-            style={isCtaDisabled ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
-          >
-            {getCtaButtonText()}
-          </button>
         </div>
-      </div>
 
-      {/* Confirmation Modal */}
-      {showConfirmModal && (
-        <div className="review-confirm-modal-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 2000 }}>
-          <div className="review-confirm-modal-container" style={{ background: "#ffffff", padding: "24px", borderRadius: "12px", width: "420px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", textAlign: "center" }}>
-            <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#1e293b", margin: "0 0 16px 0", lineHeight: "1.5" }}>
-              {getConfirmModalTitle()}
-            </h3>
-            <div style={{ color: "#10b981", fontSize: "18px", fontWeight: "800", marginBottom: "24px" }}>
-              Payable Amount ₹{(isGrowPlanTestPayment ? growPlanTestAmount : payableAmount).toLocaleString("en-IN")}
-            </div>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button
-                onClick={handleProceedSubscription}
-                style={{
-                  flex: 1,
-                  padding: "10px 16px",
-                  borderRadius: "6px",
-                  border: "none",
-                  backgroundColor: "#2962ff",
-                  color: "#ffffff",
-                  fontWeight: "bold",
-                  cursor: "pointer"
-                }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                style={{
-                  flex: 1,
-                  padding: "10px 16px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#ffffff",
-                  color: "#475569",
-                  fontWeight: "bold",
-                  cursor: "pointer"
-                }}
-              >
-                No
-              </button>
+        {/* Confirmation Modal */}
+        {showConfirmModal && (
+          <div className="review-confirm-modal-overlay">
+            <div className="review-confirm-modal-container">
+              <div className="review-confirm-icon">✓</div>
+              <h3>{getConfirmModalTitle()}</h3>
+              <p className="review-confirm-subtitle">
+                Please confirm the selected plan before proceeding.
+              </p>
+
+              <div className="review-confirm-summary">
+                <div>
+                  <span>Plan</span>
+                  <strong>{selectedPlan.name}</strong>
+                </div>
+                <div>
+                  <span>Duration</span>
+                  <strong>{planDuration}</strong>
+                </div>
+                <div>
+                  <span>Payable Amount</span>
+                  <strong>₹{payableAmount.toLocaleString("en-IN")}</strong>
+                </div>
+              </div>
+
+              <div className="review-confirm-actions">
+                <button className="review-confirm-no" onClick={() => setShowConfirmModal(false)}>
+                  Cancel
+                </button>
+                <button className="review-confirm-yes" onClick={handleProceedSubscription}>
+                  Confirm
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
     </>
   );

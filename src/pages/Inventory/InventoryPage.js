@@ -11,6 +11,7 @@ const InventoryPage = () => {
 
   const {
     filteredItems,
+    paginatedItems,
     loading,
     error,
     setError,
@@ -46,8 +47,9 @@ const InventoryPage = () => {
     setPage(1);
   };
 
-  const fromItem = totalItems === 0 ? 0 : (page - 1) * limit + 1;
-  const toItem = Math.min(page * limit, totalItems);
+  const visibleTotal = totalItems;
+  const fromItem = visibleTotal === 0 ? 0 : (page - 1) * limit + 1;
+  const toItem = Math.min(page * limit, visibleTotal);
 
   return (
     <div className={`inv-page-root ${changedRows.length > 0 ? "has-update-bar" : ""}`}>
@@ -132,15 +134,15 @@ const InventoryPage = () => {
           ) : (
             <>
               <InventoryTable
-                items={filteredItems}
+                items={paginatedItems}
                 onQuantityChange={handleIncrement}
                 disabled={updating}
               />
 
-              {!error && filteredItems.length > 0 && (
+              {!error && visibleTotal > 0 && (
                 <div className="inv-pagination">
                   <div className="inv-pagination-info">
-                    Showing <span>{fromItem}–{toItem}</span> of <span>{totalItems}</span> products
+                    Showing <span>{fromItem}–{toItem}</span> of <span>{visibleTotal}</span> variants
                   </div>
                   <div className="inv-pagination-controls">
                     <button

@@ -111,13 +111,13 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .plan-card {
   position: relative;
-  min-height: 520px;
-  height: 520px;
+  min-height: 720px;
+  height: 100%;
   background: var(--gp-card);
   border: 1px solid var(--gp-border);
   border-radius: 14px;
@@ -295,8 +295,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1;
-  overflow: hidden;
+  flex: 0;
+  overflow: visible;
 }
 
 .plan-feature-item {
@@ -367,15 +367,15 @@
   bottom: 0;
   z-index: 9999;
   background: #ffffff;
-  padding: 16px 32px;
+  padding: 14px 28px;
   border-top: 1px solid #e5e7eb;
-  box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.10);
   box-sizing: border-box;
 }
 
 .grow-plan-sticky-action {
   width: 100%;
-  min-height: 76px;
+  min-height: 64px;
   background: #ffffff;
   border-radius: 14px;
   display: flex;
@@ -402,8 +402,8 @@
   justify-content: center;
   padding: 0 20px;
   border-radius: 10px;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 800;
   white-space: nowrap;
   box-sizing: border-box;
   flex-shrink: 0;
