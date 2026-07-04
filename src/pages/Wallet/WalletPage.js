@@ -122,6 +122,7 @@ const WalletPage = () => {
     const [loadingCampaignHistory, setLoadingCampaignHistory] = useState(false);
     const [addingFunds, setAddingFunds] = useState(false);
     const [razorpayLoading, setRazorpayLoading] = useState(false);
+    const [isTransactionProcessing, setIsTransactionProcessing] = useState(false);
     const [error, setError] = useState(null);
     const [successMessage, setSuccessMessage] = useState(null);
     const [amount, setAmount] = useState("");
@@ -322,6 +323,8 @@ const WalletPage = () => {
     }, [loadWalletBalance, loadTransactionHistory]);
 
     const handleTabChange = (tab) => {
+        if (isTransactionProcessing) return;
+
         setActiveTab(tab);
 
         if (tab === "history") {
@@ -334,6 +337,8 @@ const WalletPage = () => {
     };
 
     const openModal = () => {
+        if (isTransactionProcessing || paymentInProgressRef.current) return;
+
         setAmount("");
         setSuccessMessage(null);
         setError(null);
@@ -373,7 +378,7 @@ const WalletPage = () => {
     const handleProceedPayment = async (e) => {
         e.preventDefault();
 
-        if (paymentInProgressRef.current) return;
+        if (paymentInProgressRef.current || isTransactionProcessing) return;
 
         const amountVal = Number(amount);
 
@@ -391,6 +396,8 @@ const WalletPage = () => {
         }
 
         paymentInProgressRef.current = true;
+        let checkoutOpened = false;
+        setIsTransactionProcessing(true);
         setRazorpayLoading(true);
         setError(null);
 
@@ -627,7 +634,6 @@ const WalletPage = () => {
                         window.dispatchEvent(new CustomEvent("walletUpdate"));
 
                         setSuccessMessage(`₹${Number(amountVal).toFixed(2)} credited to your wallet.`);
-                        setAddingFunds(false);
 
                         setTimeout(() => {
                             setIsModalOpen(false);
@@ -640,8 +646,10 @@ const WalletPage = () => {
                             handlerErr.message ||
                             "Failed to complete payment. Please contact support."
                         );
-                        setAddingFunds(false);
                     } finally {
+                        setAddingFunds(false);
+                        setRazorpayLoading(false);
+                        setIsTransactionProcessing(false);
                         paymentInProgressRef.current = false;
                     }
                 },
@@ -649,6 +657,7 @@ const WalletPage = () => {
                     ondismiss: () => {
                         setAddingFunds(false);
                         setRazorpayLoading(false);
+                        setIsTransactionProcessing(false);
                         paymentInProgressRef.current = false;
                         setError("Payment cancelled. Your wallet has not been charged.");
                     }
@@ -661,6 +670,7 @@ const WalletPage = () => {
                 devError("[WalletPage] Razorpay payment.failed:", resp?.error);
                 setAddingFunds(false);
                 setRazorpayLoading(false);
+                setIsTransactionProcessing(false);
                 paymentInProgressRef.current = false;
 
                 const reason =
@@ -672,25 +682,31 @@ const WalletPage = () => {
             });
 
             rzp.open();
+            checkoutOpened = true;
         } catch (err) {
             devError("[WalletPage] Add funds failed:", err);
             setError(err.message || "Could not complete add funds flow.");
             setRazorpayLoading(false);
             setAddingFunds(false);
             paymentInProgressRef.current = false;
+        } finally {
+            if (!checkoutOpened) {
+                setIsTransactionProcessing(false);
+            }
         }
     };
 
     const isInitialLoading = loadingBalance && balance === 0 && !error;
+    const walletActionsDisabled = isTransactionProcessing || razorpayLoading || addingFunds;
 
     return (
         <div className="transaction-page-root">
             <div className="transaction-header-bar">
-                <button className="header-icon-btn back-btn" onClick={() => navigate(-1)} aria-label="Go Back">
+                <button className="header-icon-btn back-btn" onClick={() => navigate(-1)} aria-label="Go Back" disabled={walletActionsDisabled}>
                     <ChevronLeft size={24} />
                 </button>
                 <h1 className="transaction-title">Transaction</h1>
-                <button className="header-icon-btn bell-btn" onClick={() => navigate("/notifications")} aria-label="Notifications">
+                <button className="header-icon-btn bell-btn" onClick={() => navigate("/notifications")} aria-label="Notifications" disabled={walletActionsDisabled}>
                     <Bell size={24} />
                 </button>
             </div>
@@ -706,7 +722,7 @@ const WalletPage = () => {
                 {error && (
                     <div className="wallet-error-banner">
                         <span>{error}</span>
-                        <button type="button" className="error-close" onClick={() => setError(null)}>&times;</button>
+                        <button type="button" className="error-close" onClick={() => setError(null)} disabled={walletActionsDisabled}>&times;</button>
                     </div>
                 )}
 
@@ -722,7 +738,7 @@ const WalletPage = () => {
                                 <span className="balance-label">Wallet Balance</span>
                                 <h2 className="balance-value">₹{balance.toFixed(2)}</h2>
                             </div>
-                            <button className="btn-add-funds-v2" onClick={openModal}>
+                            <button className="btn-add-funds-v2" onClick={openModal} disabled={walletActionsDisabled}>
                                 <Plus size={16} />
                                 <span>Add Funds</span>
                             </button>
@@ -733,6 +749,7 @@ const WalletPage = () => {
                                 type="button"
                                 className={`tab-btn-v2 ${activeTab === "history" ? "active" : ""}`}
                                 onClick={() => handleTabChange("history")}
+                                disabled={walletActionsDisabled}
                             >
                                 Transaction History
                             </button>
@@ -740,6 +757,7 @@ const WalletPage = () => {
                                 type="button"
                                 className={`tab-btn-v2 ${activeTab === "campaign" ? "active" : ""}`}
                                 onClick={() => handleTabChange("campaign")}
+                                disabled={walletActionsDisabled}
                             >
                                 Campaign Spends
                             </button>
@@ -822,15 +840,15 @@ const WalletPage = () => {
             </div>
 
             {isModalOpen && (
-                <div className="wallet-modal-overlay" onClick={() => !(razorpayLoading || addingFunds) && setIsModalOpen(false)}>
+                <div className="wallet-modal-overlay" onClick={() => !walletActionsDisabled && setIsModalOpen(false)}>
                     <div className="wallet-bottom-sheet" onClick={(e) => e.stopPropagation()}>
                         <div className="bottom-sheet-handle" />
 
                         <button
                             type="button"
                             className="bottom-sheet-close"
-                            onClick={() => !(razorpayLoading || addingFunds) && setIsModalOpen(false)}
-                            disabled={razorpayLoading || addingFunds}
+                            onClick={() => !walletActionsDisabled && setIsModalOpen(false)}
+                            disabled={walletActionsDisabled}
                         >
                             <X size={20} />
                         </button>
@@ -859,7 +877,7 @@ const WalletPage = () => {
                                             min="1"
                                             required
                                             autoFocus
-                                            disabled={razorpayLoading || addingFunds}
+                                            disabled={walletActionsDisabled}
                                         />
                                     </div>
                                 </div>
@@ -870,8 +888,8 @@ const WalletPage = () => {
                                             key={amt}
                                             type="button"
                                             className="quick-amt-button"
-                                            onClick={() => setAmount(String(amt))}
-                                            disabled={razorpayLoading || addingFunds}
+                                            onClick={() => !walletActionsDisabled && setAmount(String(amt))}
+                                            disabled={walletActionsDisabled}
                                         >
                                             +₹{amt}
                                         </button>
@@ -881,7 +899,7 @@ const WalletPage = () => {
                                 <button
                                     type="submit"
                                     className="btn-bottom-sheet-add"
-                                    disabled={razorpayLoading || addingFunds}
+                                    disabled={walletActionsDisabled}
                                 >
                                     {razorpayLoading
                                         ? "Opening Razorpay..."
@@ -891,6 +909,16 @@ const WalletPage = () => {
                                 </button>
                             </form>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {isTransactionProcessing && (
+                <div className="wallet-transaction-overlay" role="alert" aria-live="assertive" aria-busy="true">
+                    <div className="wallet-transaction-loader-card">
+                        <div className="wallet-transaction-spinner" />
+                        <p className="wallet-transaction-title">Processing your transaction...</p>
+                        <p className="wallet-transaction-subtitle">Please do not close or refresh this page.</p>
                     </div>
                 </div>
             )}
