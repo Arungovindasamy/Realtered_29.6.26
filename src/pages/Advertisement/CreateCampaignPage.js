@@ -1949,7 +1949,7 @@ const CreateCampaignPage = () => {
             /* =================================================================
                STEP 2: Choose Products
                ================================================================= */
-            <div className="cc-grid-main" style={{ gridTemplateColumns: "1fr 340px" }}>
+            <div className="cc-grid-main cc-product-selection-grid">
               <div className="cc-fields-card">
                 {/* Search Bar top row */}
                 <div className="product-search-wrapper" style={{ marginBottom: "20px" }}>
@@ -2272,14 +2272,7 @@ const CreateCampaignPage = () => {
 
                 {/* Visibility Card overlay inside Step 2 */}
                 {visibilityInfo && selectedProductIds.length > 0 && (
-                  <div className="visibility-card-overlay" style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    marginTop: "20px",
-                    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)"
-                  }}>
+                  <div className="visibility-card-overlay">
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "700", color: "var(--text-main)", fontSize: "14px" }}>
                       <span style={{ color: visibilityInfo.color }}>📈 {visibilityInfo.label}</span>
                       <span style={{ color: "var(--text-muted)", fontWeight: "500" }}>• {selectedProductIds.length} products</span>
