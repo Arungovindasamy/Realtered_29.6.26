@@ -4,6 +4,17 @@ import axios from "axios";
 import { ChevronLeft, CheckCircle2, Check, ArrowRight } from "lucide-react";
 import { resolveSellerId, resolveSellerEmail } from "../../utils/sellerSession";
 import { sellerService } from "../../services/sellerService";
+import {
+  parseLocalDate,
+  getDurationMultiplier,
+  calculateInclusiveEndDate,
+  getInclusiveEffectiveEndDate,
+  getPlanRank,
+  daysBetween,
+  calculateExactMonths,
+  calculatePlanPricing,
+  getDurationMonthsCount
+} from "../../utils/pricingUtils";
 import "./GrowPlanPage.css";
 
 // Fallback plans in case the plans API doesn't return data
@@ -135,107 +146,11 @@ const parseDateSafe = (dateVal) => {
   return null;
 };
 
-// ─── Inclusive end-date helpers ─────────────────────────────────────────────
-// Business rule: subscription end date is INCLUSIVE.
-// endDate = startDate + durationMonths - 1 day
-//
-// These helpers parse dates using local year/month/day components (never a
-// direct timezone-shifting toISOString parse) so date-only business logic
-// can't drift by a day depending on the browser's timezone.
-
-// Parses yyyy-mm-dd, dd-mm-yyyy, ISO strings, or Date objects into a Date
-// object representing local midnight of that calendar day.
-const parseLocalDate = (value) => {
-  if (!value) return null;
-
-  if (value instanceof Date) {
-    if (isNaN(value.getTime())) return null;
-    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-  }
-
-  if (typeof value === "string") {
-    const datePart = value.includes("T") ? value.split("T")[0] : value;
-    const parts = datePart.split("-");
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        // yyyy-mm-dd
-        const year = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1;
-        const day = parseInt(parts[2], 10);
-        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-          return new Date(year, month, day);
-        }
-      } else {
-        // dd-mm-yyyy
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1;
-        let year = parseInt(parts[2], 10);
-        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-          if (year < 100) year += 2000;
-          return new Date(year, month, day);
-        }
-      }
-    }
-  }
-
-  const fallback = parseDateSafe(value);
-  if (fallback && !isNaN(fallback.getTime())) {
-    return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
-  }
-  return null;
-};
-
-const getDurationMonthsCount = (duration) => {
-  if (duration === "12 Months") return 12;
-  if (duration === "6 Months") return 6;
-  if (duration === "3 Months") return 3;
-  return 1;
-};
-
-// endDate = startDate + durationMonths - 1 day (inclusive end date business rule)
-const calculateInclusiveEndDate = (startDateVal, duration) => {
-  const start = parseLocalDate(startDateVal) || parseDateSafe(startDateVal) || new Date(startDateVal);
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  end.setMonth(end.getMonth() + getDurationMonthsCount(duration));
-  end.setDate(end.getDate() - 1);
-  return end;
-};
-
 const toApiDateOnlyIso = (date) => {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
-};
-
-// Detects legacy/exclusive backend end dates (saved as the day AFTER the plan
-// should actually end) and converts them to the correct inclusive end date.
-// Records already saved correctly as inclusive are left untouched.
-//
-// Heuristic (per spec): if the raw end date falls on the same day-of-month as
-// the start date and is after the start date, it's an exclusive date and gets
-// shifted back by 1 day. Otherwise it's already inclusive.
-const getInclusiveEffectiveEndDate = (subscription) => {
-  if (!subscription) return null;
-
-  const start = parseLocalDate(subscription.startedDate || subscription.startDate);
-  const rawEnd = parseLocalDate(
-    subscription.endedDate ||
-    subscription.endDate ||
-    subscription.expiryDate ||
-    subscription.expiredOn ||
-    subscription.validTill
-  );
-
-  if (!rawEnd) return null;
-  if (!start) return rawEnd;
-
-  const isLikelyExclusive = rawEnd.getDate() === start.getDate() && rawEnd.getTime() > start.getTime();
-  if (!isLikelyExclusive) return rawEnd;
-
-  const corrected = new Date(rawEnd.getFullYear(), rawEnd.getMonth(), rawEnd.getDate());
-  corrected.setDate(corrected.getDate() - 1);
-  return corrected;
 };
 
 const formatPlanDate = (dateValue) => {
@@ -345,6 +260,45 @@ const extractSubscriptionOrders = (response) => {
   return data?.message?.orders || [];
 };
 
+const applyLocalScheduledOverride = (orders, sellerKey) => {
+  if (!Array.isArray(orders) || !sellerKey) return orders;
+
+  try {
+    const stored = window.localStorage.getItem(`growPlanScheduledOverride:${sellerKey}`);
+    if (!stored) return orders;
+
+    const override = JSON.parse(stored);
+    const overrideId = override?.TableID || override?.tableId || override?._id || override?.subscriptionId;
+    const overridePlan = normalize(override?.planName || override?.plan || override?.subscriptionPlan);
+
+    let applied = false;
+    const merged = orders.map((subscription) => {
+      if (normalize(subscription?.status) !== "scheduled") return subscription;
+      const subscriptionId =
+        subscription?.TableID || subscription?.tableId || subscription?._id || subscription?.subscriptionId;
+      const subscriptionPlan = normalize(
+        subscription?.planName || subscription?.plan || subscription?.subscriptionPlan
+      );
+      const isMatch = overrideId
+        ? String(subscriptionId || "") === String(overrideId)
+        : Boolean(overridePlan && subscriptionPlan === overridePlan);
+      if (!isMatch) return subscription;
+
+      applied = true;
+      return {
+        ...subscription,
+        startedDate: override.startedDate,
+        endedDate: override.endedDate
+      };
+    });
+
+    return applied ? merged : orders;
+  } catch (error) {
+    console.warn("[GrowPlan] Unable to apply local schedule override:", error);
+    return orders;
+  }
+};
+
 const extractWalletBalance = (response) => {
   const data = response?.data ?? response;
   return Number(
@@ -358,50 +312,6 @@ const extractWalletBalance = (response) => {
     data?.balance ??
     0
   );
-};
-
-const getDurationMultiplier = (duration) => {
-  if (duration === "3 Months") return 3;
-  if (duration === "6 Months") return 5;
-  if (duration === "12 Months") return 10;
-  return 1;
-};
-
-const getPlanRank = (planName) => {
-  const name = String(planName || "").trim().toLowerCase();
-  if (name.includes("enterprise")) return 3;
-  if (name.includes("pro")) return 2;
-  if (name.includes("growth")) return 1;
-  return 0;
-};
-
-const getDurationMonths = (duration) => {
-  if (duration === "3 Months") return 3;
-  if (duration === "6 Months") return 6;
-  if (duration === "12 Months") return 12;
-  return 1;
-};
-
-const calculateRemainingAmount = (subscription) => {
-  if (!subscription) return 0;
-
-  const start = parseDateSafe(subscription.startedDate || subscription.startDate);
-  const end = parseDateSafe(subscription.endedDate || subscription.endDate);
-  const now = new Date();
-
-  if (!start || !end || now >= end || now < start) {
-    return 0;
-  }
-
-  const totalDuration = end.getTime() - start.getTime();
-  const remainingDuration = end.getTime() - now.getTime();
-
-  if (totalDuration <= 0 || remainingDuration <= 0) return 0;
-
-  const originalAmount = Number(subscription.amount || subscription.price || 0);
-  const remainingValue = (originalAmount * remainingDuration) / totalDuration;
-
-  return Math.max(0, Math.round(remainingValue));
 };
 
 
@@ -542,26 +452,6 @@ const GrowPlanPage = () => {
       const finalPlans = mapPlansWithFeatures(planItems);
       setPlans(finalPlans);
 
-      // Pre-select Recommended Pro plan only once, on first load. If the
-      // seller has already manually selected a plan (selectedPlan is not
-      // null), this must never override that choice.
-      setSelectedPlan((prev) => {
-        if (prev) return prev;
-
-        const recommended = finalPlans.find(
-          (p) => p.recommended || normalize(p.name) === "pro" || normalize(p.planName) === "pro"
-        );
-        const defaultPlan = recommended || finalPlans[0] || null;
-        if (!defaultPlan) return null;
-
-        return {
-          ...defaultPlan,
-          planId: defaultPlan._id || defaultPlan.id,
-          planName: defaultPlan.name,
-          amount: Number(defaultPlan.price)
-        };
-      });
-
       // 2. Fetch Wallet Balance
       console.log(`[GrowPlanPage] Fetching wallet balance... GET https://haatza.com/_functions/checkWalletBalance?sellerId=${sellerId}`);
       try {
@@ -579,7 +469,10 @@ const GrowPlanPage = () => {
           const subRes = await sellerService.getSellerSubscription(sellerEmail);
           setSubscriptionRes(subRes);
           console.log("[GrowPlanPage] Seller Subscription Response", subRes);
-          const orders = extractSubscriptionOrders(subRes);
+          const orders = applyLocalScheduledOverride(
+            extractSubscriptionOrders(subRes),
+            sellerId || sellerEmail
+          );
           setSubscriptionList(orders);
           const latest = getLatestSubscription(orders);
           console.log("[GrowPlan] subscription orders:", orders);
@@ -655,6 +548,14 @@ const GrowPlanPage = () => {
   function getPlanActionLabel(selectedPlan, currentSubscription) {
     if (!selectedPlan) return "";
 
+    if (
+      scheduledSubscription &&
+      normalize(selectedPlan.name || selectedPlan.planName) ===
+      normalize(scheduledSubscription.planName || scheduledSubscription.plan)
+    ) {
+      return "Reschedule Plan";
+    }
+
     const currentStatus = String(currentSubscription?.status || "").toLowerCase();
     const currentRank = getPlanRank(
       currentSubscription?.planName ||
@@ -711,52 +612,27 @@ const GrowPlanPage = () => {
   useEffect(() => {
     if (!selectedPlan) return;
 
-    // 1. baseAmount
-    const basePrice = Number(selectedPlan.price || 0);
-    setBaseAmount(basePrice);
+    // Find oldPlan corresponding to current subscription
+    const oldPlan = plans?.find(p =>
+      p.id === currentSubscription?.planId ||
+      p._id === currentSubscription?.planId ||
+      normalize(p.name) === normalize(currentSubscription?.planName || currentSubscription?.plan)
+    );
 
-    // 2. originalTotal
-    const multiplier = getDurationMultiplier(planDuration);
-    const origTotal = basePrice * multiplier;
-    setOriginalTotal(origTotal);
+    // startedDate and endedDate (inclusive end-date business rule:
+    // endDate = startDate + durationMonths - 1 day)
+    let startD = new Date();
+    const isRenew = currentSubscription &&
+      normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
 
-    // 3. remainingAmount
-    let remainingVal = 0;
-    const isUpgrade = currentSubscription &&
-      normalize(selectedPlan.name) !== normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
-
-    const oldExpiry = currentSubscription ? parseDateSafe(
+    const oldExpiry = currentSubscription ? parseLocalDate(
       currentSubscription.endDate ||
       currentSubscription.endedDate ||
       currentSubscription.expiryDate ||
       currentSubscription.expiredOn ||
       currentSubscription.validTill
     ) : null;
-    const isOldActive = oldExpiry ? oldExpiry > new Date() : false;
-
-    if (isUpgrade && isOldActive) {
-      remainingVal = calculateRemainingAmount(currentSubscription);
-    }
-    setRemainingAmount(remainingVal);
-
-    // 4. totalPayableAmount before wallet
-    let payable = origTotal - remainingVal - discountAmount;
-    if (payable < 0) payable = 0;
-
-    // 5. walletUsedAmount & totalPayableAmount after wallet
-    let walletUsed = 0;
-    if (useWallet) {
-      walletUsed = Math.min(availableBalance, payable);
-      payable = payable - walletUsed;
-    }
-    setWalletUsedAmount(walletUsed);
-    setTotalPayableAmount(payable);
-
-    // 6. startedDate and endedDate (inclusive end-date business rule:
-    // endDate = startDate + durationMonths - 1 day)
-    let startD = new Date();
-    const isRenew = currentSubscription &&
-      normalize(selectedPlan.name) === normalize(currentSubscription.planName || currentSubscription.plan || currentSubscription.subscriptionPlan);
+    const isOldActive = oldExpiry ? oldExpiry >= new Date() : false;
 
     if (isRenew && isOldActive) {
       // Use the TRUE (inclusive) old expiry so legacy exclusive backend
@@ -765,6 +641,32 @@ const GrowPlanPage = () => {
       startD = new Date(effectiveOldEnd.getTime());
       startD.setDate(startD.getDate() + 1);
     }
+
+    const pricing = calculatePlanPricing({
+      selectedPlan,
+      planDuration,
+      currentSubscription,
+      oldPlan,
+      selectedStartDate: startD,
+      discountAmount,
+      useWallet,
+      walletBalance: availableBalance,
+      plans
+    });
+
+    const {
+      basePrice,
+      totalPrice,
+      remainingAmount,
+      walletUsedAmount,
+      payableAmount
+    } = pricing;
+
+    setBaseAmount(basePrice);
+    setOriginalTotal(totalPrice);
+    setRemainingAmount(remainingAmount);
+    setWalletUsedAmount(walletUsedAmount);
+    setTotalPayableAmount(payableAmount);
 
     const startIso = toApiDateOnlyIso(startD);
     setStartedDate(startIso);
@@ -781,7 +683,7 @@ const GrowPlanPage = () => {
       apiEndedDate: endIso
     });
 
-  }, [selectedPlan, currentSubscription, planDuration, useWallet, discountAmount, availableBalance]);
+  }, [selectedPlan, currentSubscription, planDuration, useWallet, discountAmount, availableBalance, plans]);
 
   const payableAmount = totalPayableAmount;
 
@@ -875,8 +777,9 @@ const GrowPlanPage = () => {
       // Otherwise, proceed with Razorpay payment
       setProcessingMessage("Creating payment order...");
 
+      const paymentAmountForRazorpay = Math.round(totalPayableAmount);
       const createOrderPayload = {
-        amount: 1, // FORCE_GROW_PLAN_ONE_RUPEE_TEST
+        amount: paymentAmountForRazorpay,
         currency: "INR",
         receipt: `rcpt_${Date.now()}`
       };
@@ -981,14 +884,6 @@ const GrowPlanPage = () => {
     try {
       setProcessingMessage("Activating subscription...");
 
-      /*
-        FINAL PAYLOAD RULES
-        - This function sends ONLY the final selected-plan payload.
-        - It always sends populated createSellerInvoice data.
-        - The old termination-style empty invoice payload caused the wrong request.
-        - Subscribe/new/upgrade/renew/downgrade all send a full invoice.
-      */
-
       const safeText = (value, fallback = "NA") => {
         if (value === undefined || value === null) return fallback;
         const textValue = String(value).trim();
@@ -1043,26 +938,13 @@ const GrowPlanPage = () => {
         return `${startIso.split("T")[0]}T00:00:00.000Z`;
       };
 
-      const calculateEndApiIso = (startIso, duration) => {
+      const calculateEndApiIso = (startIso, durationVal) => {
         const start = parseDateSafe(startIso) || new Date(startIso);
-        const monthsToAdd = getDurationMonths(duration);
+        const monthsToAdd = getDurationMonthsCount(durationVal);
         const end = new Date(start.getTime());
         end.setMonth(end.getMonth() + monthsToAdd);
         end.setDate(end.getDate() - 1);
         return toApiEndOfDayIso(end);
-      };
-
-      const getGstInclusiveBreakup = (total) => {
-        const totalValue = Number(total || 0);
-        const taxableAmount = Math.round(totalValue / 1.10);
-        const taxAmount = Math.round(((totalValue - taxableAmount) / 2) * 100) / 100;
-        return {
-          rate: taxableAmount,
-          amount: taxableAmount,
-          subtotal: taxableAmount,
-          cgst: taxAmount,
-          sgst: taxAmount
-        };
       };
 
       const sellerName = safeText(
@@ -1090,7 +972,7 @@ const GrowPlanPage = () => {
       );
 
       const sellerGstin = safeText(sellerProfile?.gstin || sellerProfile?.GSTIN, "NA");
-      const sellerPhone = safeText(sellerProfile?.phone, "");
+      const sellerPhone = safeText(sellerProfile?.phone || sellerProfile?.phoneNo || "", "");
 
       const selectedPlanId =
         selectedPlan?.planId ||
@@ -1104,7 +986,7 @@ const GrowPlanPage = () => {
         currentSubscription?._id ||
         "";
 
-      const oldExpiry = currentSubscription ? parseDateSafe(
+      const oldExpiry = currentSubscription ? parseLocalDate(
         currentSubscription.endDate ||
         currentSubscription.endedDate ||
         currentSubscription.expiryDate ||
@@ -1112,9 +994,6 @@ const GrowPlanPage = () => {
         currentSubscription.validTill
       ) : null;
 
-      // Corrected (guaranteed inclusive) old expiry — used for computing the
-      // next plan's start date so legacy exclusive backend records don't push
-      // the next start date out by an extra day.
       const effectiveOldExpiry = currentSubscription ? getInclusiveEffectiveEndDate(currentSubscription) : null;
 
       const isOldActive = oldExpiry ? oldExpiry >= new Date() : false;
@@ -1162,10 +1041,10 @@ const GrowPlanPage = () => {
           ? currentTableId
           : "";
 
-      const totalPayable = Number(totalPayableAmount || 0);
+      const totalPayableBeforeWallet = totalPayableAmount + walletUsedAmount;
       const walletPaymentAmount = Number(walletUsedAmount || 0);
-      const upiPaymentAmount = totalPayable;
-      const gstBreakup = getGstInclusiveBreakup(totalPayable);
+      const upiPaymentAmount = Number(totalPayableAmount || 0);
+      const paidAmount = walletPaymentAmount + upiPaymentAmount;
 
       const invoiceData = {
         invoiceDate: new Date().toISOString(),
@@ -1175,20 +1054,28 @@ const GrowPlanPage = () => {
         gstin: sellerGstin,
         item: selectedPlan.name,
         qty: 1,
-        rate: gstBreakup.rate,
-        amount: gstBreakup.amount,
-        subtotal: gstBreakup.subtotal,
-        cgst: gstBreakup.cgst,
-        sgst: gstBreakup.sgst,
-        totalPayable,
+        rate: totalPayableBeforeWallet,
+        amount: originalTotal,
+        originalPlanAmount: originalTotal,
+        waivedAmount: remainingAmount,
+        remainingSubscriptionValue: remainingAmount,
+        discountAmount: discountAmount,
+        subtotal: totalPayableBeforeWallet,
+        totalPayable: totalPayableBeforeWallet,
+        payableAmount: totalPayableAmount,
         payments: {
           wallet: walletPaymentAmount,
           upi: upiPaymentAmount
         },
+        paymentMethod: walletPaymentAmount > 0 && upiPaymentAmount === 0
+          ? "Wallet"
+          : walletPaymentAmount > 0 && upiPaymentAmount > 0
+            ? "Wallet + UPI"
+            : "UPI",
         transactionMethod: walletPaymentAmount > 0 && upiPaymentAmount === 0
           ? "Wallet"
           : walletPaymentAmount > 0 && upiPaymentAmount > 0
-            ? "Wallet, UPI"
+            ? "Wallet + UPI"
             : "UPI"
       };
 
@@ -1203,7 +1090,22 @@ const GrowPlanPage = () => {
         paymentId: paymentId,
         razorpayOrderId: orderId,
         sellerId: sellerId,
-        phone: sellerPhone
+        phone: sellerPhone,
+        amount: originalTotal,
+        originalPlanAmount: originalTotal,
+        payableAmount: totalPayableAmount,
+        waivedAmount: remainingAmount,
+        remainingSubscriptionValue: remainingAmount,
+        subtotal: totalPayableBeforeWallet,
+        totalPayable: totalPayableBeforeWallet,
+        walletAmount: walletPaymentAmount,
+        razorpayAmount: upiPaymentAmount,
+        paymentMethod: walletPaymentAmount > 0 && upiPaymentAmount === 0
+          ? "Wallet"
+          : walletPaymentAmount > 0 && upiPaymentAmount > 0
+            ? "Wallet + UPI"
+            : "UPI",
+        paidAmount: paidAmount
       };
 
       const referralPayload = {
@@ -1330,14 +1232,38 @@ const GrowPlanPage = () => {
       {/* Grid of pricing cards stacked in a list */}
       <div className="plans-list">
         {plans.map((plan) => {
-          const isSelected = selectedPlan?.id === plan.id;
+          const isSelected = Boolean(
+            selectedPlan &&
+            (
+              (selectedPlan.id && plan.id && String(selectedPlan.id) === String(plan.id)) ||
+              (selectedPlan._id && plan._id && String(selectedPlan._id) === String(plan._id)) ||
+              normalize(selectedPlan.name || selectedPlan.planName) === normalize(plan.name || plan.planName)
+            )
+          );
+          const isCurrent = isCurrentActivePlan(plan);
+          const isScheduled = isScheduledPlan(plan);
           const featuresToShow = plan.features || [];
 
           return (
             <div
-              className={`plan-card ${isSelected ? "selected" : ""} ${plan.recommended ? "recommended" : ""}`}
+              className={[
+                "plan-card",
+                plan.recommended ? "recommended" : "",
+                isSelected ? "selected" : "",
+                isCurrent ? "current" : "",
+                isScheduled ? "scheduled" : ""
+              ].filter(Boolean).join(" ")}
               key={plan.id}
               onClick={() => handleSelectPlan(plan)}
+              role="radio"
+              aria-checked={isSelected}
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleSelectPlan(plan);
+                }
+              }}
             >
               <div className="plan-card-header">
                 <div className="plan-name-wrapper">
@@ -1356,13 +1282,13 @@ const GrowPlanPage = () => {
                 <span className="plan-duration"> / month</span>
               </div>
 
-              {isCurrentActivePlan(plan) && (
+              {isCurrent && (
                 <div className="plan-status-banner active">
                   Current plan active till: {formatCurrentPlanActiveTill(currentSubscription)}
                 </div>
               )}
 
-              {isScheduledPlan(plan) && (
+              {isScheduled && (
                 <div className="plan-status-banner scheduled">
                   Scheduled plan starts on: {formatPlanDate(
                     scheduledSubscription.startedDate ||
