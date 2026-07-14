@@ -810,3 +810,16 @@
 
 
 }
+
+/* Responsive page-width overrides */
+.grow-plan-container { width: 100%; min-width: 0; max-width: 100%; overflow-x: clip; container-type: inline-size; }
+@container (max-width: 900px) {
+  .plans-list, .grow-plan-footer-content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 620px) {
+  .grow-plan-container { padding: 16px; }
+  .plans-list, .grow-plan-footer-content { grid-template-columns: minmax(0, 1fr); }
+  .plan-card, .plan-review-card, .subscription-success-card { min-height: 0; padding: 20px; }
+  .grow-plan-sticky-action { align-items: stretch; flex-direction: column; }
+  .grow-plan-sticky-action button { width: 100%; }
+}

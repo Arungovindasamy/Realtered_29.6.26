@@ -13,7 +13,8 @@ import {
   daysBetween,
   calculateExactMonths,
   calculatePlanPricing,
-  getDurationMonthsCount
+  getDurationMonthsCount,
+  getScheduledPlanPurchaseDecision
 } from "../../utils/pricingUtils";
 import "./GrowPlanPage.css";
 
@@ -194,8 +195,10 @@ const getLatestSubscription = (orders) => {
     const d = parseDate(
       sub?.startedDate ||
       sub?.startDate ||
+      sub?.Starteddate ||
       sub?.endedDate ||
       sub?.endDate ||
+      sub?.Endeddate ||
       sub?.createdDate ||
       sub?.createdAt ||
       0
@@ -205,8 +208,15 @@ const getLatestSubscription = (orders) => {
 
   const isActiveNow = (sub) => {
     const status = String(sub?.status || "").toLowerCase();
-    const start = parseDate(sub?.startedDate || sub?.startDate);
-    const end = parseDate(sub?.endedDate || sub?.endDate);
+    const start = parseDate(sub?.startedDate || sub?.startDate || sub?.Starteddate);
+    const end = parseDate(
+      sub?.endedDate ||
+      sub?.endDate ||
+      sub?.Endeddate ||
+      sub?.expiryDate ||
+      sub?.expiredOn ||
+      sub?.validTill
+    );
     if (!start || !end) return false;
 
     start.setHours(0, 0, 0, 0);
@@ -217,11 +227,6 @@ const getLatestSubscription = (orders) => {
 
   const activeNow = orders.find(isActiveNow);
   if (activeNow) return activeNow;
-
-  const active = orders.find(
-    (sub) => String(sub?.status || "").toLowerCase() === "active"
-  );
-  if (active) return active;
 
   const scheduled = orders
     .filter((sub) => String(sub?.status || "").toLowerCase() === "scheduled")
@@ -258,45 +263,6 @@ const extractPlans = (response) => {
 const extractSubscriptionOrders = (response) => {
   const data = response?.data ?? response;
   return data?.message?.orders || [];
-};
-
-const applyLocalScheduledOverride = (orders, sellerKey) => {
-  if (!Array.isArray(orders) || !sellerKey) return orders;
-
-  try {
-    const stored = window.localStorage.getItem(`growPlanScheduledOverride:${sellerKey}`);
-    if (!stored) return orders;
-
-    const override = JSON.parse(stored);
-    const overrideId = override?.TableID || override?.tableId || override?._id || override?.subscriptionId;
-    const overridePlan = normalize(override?.planName || override?.plan || override?.subscriptionPlan);
-
-    let applied = false;
-    const merged = orders.map((subscription) => {
-      if (normalize(subscription?.status) !== "scheduled") return subscription;
-      const subscriptionId =
-        subscription?.TableID || subscription?.tableId || subscription?._id || subscription?.subscriptionId;
-      const subscriptionPlan = normalize(
-        subscription?.planName || subscription?.plan || subscription?.subscriptionPlan
-      );
-      const isMatch = overrideId
-        ? String(subscriptionId || "") === String(overrideId)
-        : Boolean(overridePlan && subscriptionPlan === overridePlan);
-      if (!isMatch) return subscription;
-
-      applied = true;
-      return {
-        ...subscription,
-        startedDate: override.startedDate,
-        endedDate: override.endedDate
-      };
-    });
-
-    return applied ? merged : orders;
-  } catch (error) {
-    console.warn("[GrowPlan] Unable to apply local schedule override:", error);
-    return orders;
-  }
 };
 
 const extractWalletBalance = (response) => {
@@ -416,6 +382,17 @@ const GrowPlanPage = () => {
   }, []);
 
   const handleSelectPlan = (plan) => {
+    const scheduled = subscriptionList.find(
+      (subscription) => normalize(subscription?.status) === "scheduled"
+    );
+    const decision = getScheduledPlanPurchaseDecision(plan, scheduled);
+    if (decision.blocked) {
+      setSelectedPlan(null);
+      setErrorMsg(decision.message);
+      return;
+    }
+
+    setErrorMsg(null);
     const storedPlan = {
       ...plan,
       planId: plan._id || plan.id,
@@ -469,10 +446,7 @@ const GrowPlanPage = () => {
           const subRes = await sellerService.getSellerSubscription(sellerEmail);
           setSubscriptionRes(subRes);
           console.log("[GrowPlanPage] Seller Subscription Response", subRes);
-          const orders = applyLocalScheduledOverride(
-            extractSubscriptionOrders(subRes),
-            sellerId || sellerEmail
-          );
+          const orders = extractSubscriptionOrders(subRes);
           setSubscriptionList(orders);
           const latest = getLatestSubscription(orders);
           console.log("[GrowPlan] subscription orders:", orders);
@@ -524,6 +498,14 @@ const GrowPlanPage = () => {
     (s) => String(s?.status || "").toLowerCase() === "scheduled"
   );
 
+  const previousSubscription = subscriptionList
+    .filter((subscription) => ["expired", "upgraded"].includes(normalize(subscription?.status)))
+    .sort((a, b) => {
+      const aEnd = getInclusiveEffectiveEndDate(a)?.getTime() || 0;
+      const bEnd = getInclusiveEffectiveEndDate(b)?.getTime() || 0;
+      return bEnd - aEnd;
+    })[0] || null;
+
   const isScheduledPlan = (plan) =>
     Boolean(
       scheduledSubscription &&
@@ -535,6 +517,13 @@ const GrowPlanPage = () => {
       currentSubscription &&
       String(currentSubscription.status || "").toLowerCase() === "active" &&
       normalize(plan?.name || plan?.planName) === normalize(currentSubscription.planName || currentSubscription.plan)
+    );
+
+  const isPreviousPlan = (plan) =>
+    Boolean(
+      previousSubscription &&
+      normalize(plan?.name || plan?.planName) ===
+        normalize(previousSubscription.planName || previousSubscription.plan)
     );
 
   const isSelectedDowngrade = Boolean(
@@ -1242,6 +1231,7 @@ const GrowPlanPage = () => {
           );
           const isCurrent = isCurrentActivePlan(plan);
           const isScheduled = isScheduledPlan(plan);
+          const isPrevious = isPreviousPlan(plan);
           const featuresToShow = plan.features || [];
 
           return (
@@ -1292,8 +1282,15 @@ const GrowPlanPage = () => {
                 <div className="plan-status-banner scheduled">
                   Scheduled plan starts on: {formatPlanDate(
                     scheduledSubscription.startedDate ||
-                    scheduledSubscription.startDate
+                    scheduledSubscription.startDate ||
+                    scheduledSubscription.Starteddate
                   )}
+                </div>
+              )}
+
+              {isPrevious && !isCurrent && !isScheduled && (
+                <div className="plan-status-banner active">
+                  Previous plan ended: {formatCurrentPlanActiveTill(previousSubscription)}
                 </div>
               )}
 
@@ -1353,7 +1350,8 @@ const GrowPlanPage = () => {
                 <div className="scheduled-plan-action-note">
                   You already have a scheduled plan: {scheduledSubscription.planName || scheduledSubscription.plan} starts on {formatPlanDate(
                     scheduledSubscription.startedDate ||
-                    scheduledSubscription.startDate
+                    scheduledSubscription.startDate ||
+                    scheduledSubscription.Starteddate
                   )}
                 </div>
               )}

@@ -598,3 +598,10 @@
     width: 100%;
   }
 }
+/* Responsive page-width overrides */
+.inv-page-root { width: 100%; min-width: 0; max-width: 100%; overflow-x: clip; box-sizing: border-box; container-type: inline-size; }
+@container (max-width: 720px) {
+  .inv-page-root, .inv-card-body { padding: 16px; }
+  .inv-filters-row { align-items: stretch; flex-direction: column; }
+  .inv-search-box, .inv-filter-actions { width: 100%; max-width: none; }
+}

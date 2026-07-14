@@ -12,7 +12,8 @@ import {
   daysBetween,
   calculateExactMonths,
   isWithinRenewalWindow,
-  calculatePlanPricing
+  calculatePlanPricing,
+  getScheduledPlanPurchaseDecision
 } from "../../utils/pricingUtils";
 import "./PlanReviewPage.css";
 
@@ -66,10 +67,14 @@ const getSubscriptionPlanName = (subscription) =>
   subscription?.planName || subscription?.plan || subscription?.subscriptionPlan || "";
 
 const getSubscriptionTableId = (subscription) =>
-  subscription?.TableID || subscription?.tableId || subscription?._id || "";
+  subscription?.TableID ||
+  subscription?.tableId ||
+  subscription?._id ||
+  subscription?.subscriptionId ||
+  "";
 
 const getSubscriptionStartYmd = (subscription) => {
-  const value = subscription?.startedDate || subscription?.startDate;
+  const value = subscription?.startedDate || subscription?.startDate || subscription?.Starteddate;
   if (!value) return "";
   if (typeof value === "string") return value.includes("T") ? value.split("T")[0] : value;
   const date = new Date(value);
@@ -151,8 +156,7 @@ const PlanReviewPage = () => {
 
   // Setup component states
   const [startDate, setStartDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split("T")[0];
+    return toLocalYmd(new Date());
   });
   const [planDuration, setPlanDuration] = useState("1 Month");
   const [showDurationModal, setShowDurationModal] = useState(false);
@@ -207,10 +211,13 @@ const PlanReviewPage = () => {
 
   // Expiry date parse. Mobile app treats the plan end date as inclusive.
   const currentPlanName = currentSubscription?.planName || currentSubscription?.plan;
-  const oldStart = currentSubscription ? parseDateSafe(currentSubscription.startedDate || currentSubscription.startDate) : null;
+  const oldStart = currentSubscription ? parseDateSafe(
+    currentSubscription.startedDate || currentSubscription.startDate || currentSubscription.Starteddate
+  ) : null;
   const oldExpiry = currentSubscription ? parseDateSafe(
     currentSubscription.endedDate ||
     currentSubscription.endDate ||
+    currentSubscription.Endeddate ||
     currentSubscription.expiryDate ||
     currentSubscription.expiredOn ||
     currentSubscription.validTill
@@ -243,6 +250,11 @@ const PlanReviewPage = () => {
   const scheduledSubscription = Array.isArray(subscriptionList)
     ? subscriptionList.find((s) => normalize(s?.status) === "scheduled")
     : null;
+
+  const scheduledPurchaseDecision = getScheduledPlanPurchaseDecision(
+    selectedPlan,
+    scheduledSubscription
+  );
 
   // ─── Plan rank / upgrade / downgrade / renewal classification ───────────
   const currentRank = getPlanRank(currentSubscription?.planName || currentSubscription?.plan);
@@ -292,8 +304,7 @@ const PlanReviewPage = () => {
 
   // Start/End date constraints
   const getTodayYmd = () => {
-    const d = new Date();
-    return d.toISOString().split("T")[0];
+    return toLocalYmd(new Date());
   };
 
 
@@ -365,7 +376,7 @@ const PlanReviewPage = () => {
   };
 
   // Renewals remain fixed; downgrades can be moved but never before active + 1 day.
-  const isDatePickerLocked = isRenewal;
+  const isDatePickerLocked = isRenewal && scheduledPurchaseDecision.action !== "reschedule";
 
   const handleSelectDate = (dayObj) => {
     if (isDatePickerLocked) return;
@@ -404,17 +415,34 @@ const PlanReviewPage = () => {
   // Centralized calculations
   const DURATION_ORDER = ["1 Month", "3 Months", "6 Months", "12 Months"];
 
-  const pricing = calculatePlanPricing({
-    selectedPlan,
-    planDuration,
-    currentSubscription,
-    oldPlan,
-    selectedStartDate: startDate,
-    discountAmount,
-    useWallet,
-    walletBalance,
-    plans
-  });
+  // A rejected purchase must not reach waive-off or wallet calculations.
+  const pricing = scheduledPurchaseDecision.blocked
+    ? {
+        basePrice: 0,
+        totalPrice: 0,
+        remainingAmount: 0,
+        payableBeforeWallet: 0,
+        walletUsedAmount: 0,
+        payableAmount: 0,
+        waiveOffDetails: {
+          oldEffectiveAmount: 0,
+          remainingDays: 0,
+          totalDays: 0,
+          dailyRate: 0,
+          remainingAmount: 0
+        }
+      }
+    : calculatePlanPricing({
+        selectedPlan,
+        planDuration,
+        currentSubscription,
+        oldPlan,
+        selectedStartDate: startDate,
+        discountAmount,
+        useWallet,
+        walletBalance,
+        plans
+      });
 
   const {
     basePrice,
@@ -464,10 +492,7 @@ const PlanReviewPage = () => {
   const todayStr = getTodayYmd();
   const isScheduled = startDate > todayStr;
 
-  const scheduledPlanRank = getPlanRank(getSubscriptionPlanName(scheduledSubscription));
-  const isSameScheduledPlan = Boolean(
-    scheduledSubscription && normalize(getSubscriptionPlanName(scheduledSubscription)) === normalize(selectedPlan?.name)
-  );
+  const isSameScheduledPlan = scheduledPurchaseDecision.action === "reschedule";
   const isSameScheduledDate = isSameScheduledPlan && getSubscriptionStartYmd(scheduledSubscription) === startDate;
   const isReschedule = isSameScheduledPlan && !isSameScheduledDate;
   const displayedPlanDuration = isSameScheduledPlan
@@ -475,14 +500,13 @@ const PlanReviewPage = () => {
     : planDuration;
   const isFutureUpgrade = isUpgrade && isScheduled;
   const isImmediateUpgrade = isUpgrade && !isScheduled;
+  const isScheduledReplacement = scheduledPurchaseDecision.action === "replace";
 
   const getSchedulingValidationMessage = () => {
-    if (!scheduledSubscription || isImmediateUpgrade) return "";
+    if (!scheduledSubscription) return "";
+    if (scheduledPurchaseDecision.blocked) return scheduledPurchaseDecision.message;
     if (isSameScheduledPlan) {
       return isSameScheduledDate ? "This plan is already scheduled for the selected date." : "";
-    }
-    if (selectedRank < scheduledPlanRank) {
-      return "A lower plan cannot replace your existing scheduled higher plan.";
     }
     if (selectedRank < currentRank) {
       return "You already have a scheduled downgrade. You can reschedule the same plan or cancel it before selecting another downgrade plan.";
@@ -589,6 +613,8 @@ const PlanReviewPage = () => {
   };
 
   const completeSubscriptionActivation = async (paymentId, razorpayOrderId) => {
+    let orderWasAccepted = false;
+    let supportInvoiceNumber = "";
     try {
       setProcessingMessage("Activating subscription...");
 
@@ -729,9 +755,9 @@ const PlanReviewPage = () => {
 
       const statusStr = (isDowngrade || isFutureUpgrade) ? "Scheduled" : "Active";
 
-      const tableIdToUse = (isDowngrade || isFutureUpgrade) && scheduledSubscription
+      const tableIdToUse = (isDowngrade || isFutureUpgrade || isScheduledReplacement) && scheduledSubscription
         ? getSubscriptionTableId(scheduledSubscription)
-        : (isImmediateUpgrade || isRenewal)
+        : isRenewal
           ? currentTableId
           : "";
 
@@ -743,7 +769,10 @@ const PlanReviewPage = () => {
       const upiPaymentAmount = Number(payableAmount || 0);
       const paidAmount = walletPaymentAmount + upiPaymentAmount;
 
+      const invoiceNumber = `SUB-${sellerId}-${Date.now()}`;
+      supportInvoiceNumber = invoiceNumber;
       const invoiceData = {
+        invoiceNumber,
         invoiceDate: new Date().toISOString(),
         sellerName: sName,
         sellerId: sellerId,
@@ -806,15 +835,60 @@ const PlanReviewPage = () => {
       };
       subPayload.schedulingAction = isSameScheduledPlan
         ? "reschedule"
-        : scheduledSubscription && (isFutureUpgrade || isImmediateUpgrade)
+        : scheduledSubscription && (isFutureUpgrade || isImmediateUpgrade || isScheduledReplacement)
           ? "replace"
           : statusStr === "Scheduled"
             ? "schedule"
             : "activate";
       subPayload.existingScheduledTableId = getSubscriptionTableId(scheduledSubscription);
-      subPayload.cancelScheduledTableId = isImmediateUpgrade
+      subPayload.cancelScheduledTableId = (isImmediateUpgrade || isScheduledReplacement)
         ? getSubscriptionTableId(scheduledSubscription)
         : "";
+
+      // Keep the old-plan truncation in the same paid order transaction. The
+      // order endpoint does not accept a second createSubscription-only call.
+      const upgradeStart = startOfDay(finalStartedDate);
+      const shouldShortenActivePlan = Boolean(
+        isUpgrade &&
+        currentTableId &&
+        oldStart &&
+        effectiveOldExpiry &&
+        upgradeStart &&
+        upgradeStart <= startOfDay(effectiveOldExpiry)
+      );
+      let updateActiveSubscription = null;
+      if (shouldShortenActivePlan) {
+        const shortenedActiveEnd = new Date(upgradeStart);
+        shortenedActiveEnd.setDate(shortenedActiveEnd.getDate() - 1);
+        const activeStartedDate = toApiDateOnlyIso(oldStart);
+        const activeEndedDate = toApiDateOnlyIso(shortenedActiveEnd);
+        updateActiveSubscription = {
+          tableId: currentTableId,
+          TableID: currentTableId,
+          subscriptionId: currentTableId,
+          sellerId,
+          email: sellerEmail,
+          planId: currentSubscription?.planId || "",
+          planName: getSubscriptionPlanName(currentSubscription),
+          status: isImmediateUpgrade ? "Expired" : "Active",
+          startedDate: activeStartedDate,
+          Starteddate: activeStartedDate,
+          endedDate: activeEndedDate,
+          Endeddate: activeEndedDate,
+          upgradedToPlanId: selectedPlanId,
+          upgradedToPlanName: selectedPlan.name,
+          schedulingAction: "shorten_active_for_upgrade"
+        };
+        subPayload.activeSubscriptionTableId = currentTableId;
+        subPayload.activeSubscriptionEndedDate = activeEndedDate;
+        subPayload.previousSubscriptionTableId = currentTableId;
+        subPayload.previousSubscriptionEndedDate = activeEndedDate;
+        subPayload.updateActiveSubscription = updateActiveSubscription;
+        console.log("Active subscription before upgrade:", currentSubscription);
+        console.log("Selected upgrade start date:", finalStartedDate);
+        console.log("Calculated previous plan end date:", activeEndedDate);
+        console.log("Waive-off details:", pricing.waiveOffDetails);
+      }
       const referralPayload = {
         rewardEarned: isCouponApplied ? discountAmount : 0,
         rewardUsed: isCouponApplied ? 1 : 0,
@@ -824,16 +898,38 @@ const PlanReviewPage = () => {
       const storePayload = {
         createSellerInvoice: invoiceData,
         createSubscription: subPayload,
-        referralUpdate: referralPayload
+        referralUpdate: referralPayload,
+        ...(updateActiveSubscription ? {
+          updateActiveSubscription,
+          upgradeTransaction: {
+            sellerId,
+            currentSubscriptionId: currentTableId,
+            newPlanId: selectedPlanId,
+            newPlanName: selectedPlan.name,
+            upgradeStartDate: finalStartedDate,
+            upgradeEndDate: finalEndedDate,
+            previousSubscriptionEndDate: updateActiveSubscription.endedDate,
+            previousSubscriptionStatus: updateActiveSubscription.status,
+            newSubscriptionStatus: statusStr,
+            originalPlanAmount: totalPrice,
+            waiveOffAmount: remainingAmount,
+            finalPayableAmount: payableAmount,
+            invoiceNumber,
+            paymentId,
+            transactionMethod: subPayload.paymentMethod
+          }
+        } : {})
       };
 
       console.log("[GrowPlan] flowType:", flowType);
       console.log("[GrowPlan] tableIdToUse:", tableIdToUse);
       console.log("[GrowPlan] createSubscription payload:", subPayload);
-      console.log("[GrowPlan] processSubscriptionOrder payload:", storePayload);
+      console.log("Upgrade API payload:", storePayload);
 
-      const storeRes = await sellerService.processSubscriptionOrder(storePayload);
-      console.log("[GrowPlan] processSubscriptionOrder response:", storeRes);
+      const storeRes = updateActiveSubscription
+        ? await sellerService.upgradeSellerSubscription(storePayload)
+        : await sellerService.processSubscriptionOrder(storePayload);
+      console.log("Upgrade API response:", storeRes);
 
       const success = storeRes?.status === "success" &&
         storeRes?.message?.message === "Subscription order processed successfully";
@@ -841,6 +937,7 @@ const PlanReviewPage = () => {
       if (!success) {
         throw new Error(storeRes?.message?.error || "Subscription activation failed on backend.");
       }
+      orderWasAccepted = true;
 
       const selectedDisplayName = selectedPlan.name || selectedPlan.planName;
       const scheduledDisplayName = getSubscriptionPlanName(scheduledSubscription);
@@ -855,14 +952,61 @@ const PlanReviewPage = () => {
               : isUpgrade
                 ? "Plan upgraded successfully"
                 : "Subscription successful";
-      showToast(successToastMsg);
+      const refreshedSubscriptionResponse = await sellerService.getSellerSubscription(sellerEmail);
+      const refreshedOrders = refreshedSubscriptionResponse?.message?.orders || [];
+      console.log("Subscriptions after refresh:", refreshedOrders);
 
-      try {
-        await sellerService.getSellerSubscription(sellerEmail);
-        await sellerService.checkWalletBalance(sellerId);
-      } catch (err) {
-        console.error("[PlanReview] Background status sync error:", err);
+      if (updateActiveSubscription) {
+        const persistedPrevious = refreshedOrders.find((subscription) =>
+          String(getSubscriptionTableId(subscription)) === String(currentTableId)
+        );
+        const expectedPreviousEnd = parseLocalDate(updateActiveSubscription.endedDate);
+        const persistedPreviousEnd = getInclusiveEffectiveEndDate(persistedPrevious);
+        const previousEndMatches = Boolean(
+          expectedPreviousEnd &&
+          persistedPreviousEnd &&
+          toApiDateOnlyIso(expectedPreviousEnd) === toApiDateOnlyIso(persistedPreviousEnd)
+        );
+        const previousStatus = normalize(persistedPrevious?.status);
+        const previousStatusMatches = isImmediateUpgrade
+          ? ["expired", "upgraded"].includes(previousStatus)
+          : previousStatus === "active";
+        const expectedNewStatus = isImmediateUpgrade ? "active" : "scheduled";
+        const persistedNew = refreshedOrders.find((subscription) =>
+          String(getSubscriptionTableId(subscription)) !== String(currentTableId) &&
+          normalize(getSubscriptionPlanName(subscription)) === normalize(selectedPlan.name) &&
+          normalize(subscription?.status) === expectedNewStatus
+        );
+        const expectedNewStart = parseLocalDate(finalStartedDate);
+        const persistedNewStart = parseLocalDate(
+          persistedNew?.startedDate || persistedNew?.startDate || persistedNew?.Starteddate
+        );
+        const newStartMatches = Boolean(
+          expectedNewStart &&
+          persistedNewStart &&
+          toApiDateOnlyIso(expectedNewStart) === toApiDateOnlyIso(persistedNewStart)
+        );
+        const activeCount = refreshedOrders.filter(
+          (subscription) => normalize(subscription?.status) === "active"
+        ).length;
+
+        if (!previousEndMatches || !previousStatusMatches || !persistedNew || !newStartMatches || activeCount > 1) {
+          console.error("[PlanReview] Atomic upgrade verification failed", {
+            invoiceNumber,
+            paymentId,
+            previousEndMatches,
+            previousStatus,
+            expectedNewStatus,
+            newStartMatches,
+            activeCount,
+            refreshedOrders
+          });
+          throw new Error("DATABASE_UPGRADE_VERIFICATION_FAILED");
+        }
       }
+
+      await sellerService.checkWalletBalance(sellerId);
+      showToast(successToastMsg);
 
       setTimeout(() => {
         navigate("/dashboard/growplan");
@@ -870,7 +1014,13 @@ const PlanReviewPage = () => {
 
     } catch (err) {
       console.error("[PlanReview] Activation error:", err);
-      setErrorMsg(err.message || "Activation failed. Please contact support.");
+      if (orderWasAccepted) {
+        setErrorMsg(
+          `Payment was completed, but the subscription update failed. Please contact support with invoice number ${supportInvoiceNumber || "unavailable"}.`
+        );
+      } else {
+        setErrorMsg(err.message || "Activation failed. Please contact support.");
+      }
     } finally {
       setIsProcessingPayment(false);
       paymentInProgressRef.current = false;
@@ -885,6 +1035,58 @@ const PlanReviewPage = () => {
 
     if (!selectedPlan || !sellerId || !sellerEmail) {
       setErrorMsg("Missing selectedPlan or seller account details.");
+      return;
+    }
+
+    // Refresh immediately before checkout so stale route state cannot bypass a
+    // higher plan that was scheduled after this page opened.
+    try {
+      const latestSubscriptionResponse = await sellerService.getSellerSubscription(sellerEmail);
+      const latestOrders = latestSubscriptionResponse?.message?.orders || [];
+      const latestScheduled = latestOrders.find(
+        (subscription) => normalize(subscription?.status) === "scheduled"
+      );
+      const latestActive = latestOrders.find(
+        (subscription) => normalize(subscription?.status) === "active"
+      );
+      console.log("Latest active subscription:", latestActive || null);
+      console.log("Selected upgrade plan:", selectedPlan);
+      console.log("Upgrade date:", startDate);
+      console.log("Waive-off amount:", remainingAmount);
+      console.log("Final payable amount:", payableAmount);
+      const latestDecision = getScheduledPlanPurchaseDecision(selectedPlan, latestScheduled);
+      if (latestDecision.blocked) {
+        setErrorMsg(latestDecision.message);
+        showToast(latestDecision.message);
+        return;
+      }
+
+      const routedActive = normalize(currentSubscription?.status) === "active"
+        ? currentSubscription
+        : null;
+      const subscriptionFingerprint = (subscription) => {
+        if (!subscription) return "";
+        return [
+          normalize(subscription.status),
+          String(getSubscriptionTableId(subscription) || ""),
+          normalize(getSubscriptionPlanName(subscription)),
+          getSubscriptionStartYmd(subscription)
+        ].join("|");
+      };
+      const timelineChanged =
+        subscriptionFingerprint(latestActive) !== subscriptionFingerprint(routedActive) ||
+        subscriptionFingerprint(latestScheduled) !== subscriptionFingerprint(scheduledSubscription) ||
+        latestDecision.action !== scheduledPurchaseDecision.action;
+
+      if (timelineChanged) {
+        const message = "Your subscription timeline changed while this page was open. Please return to Grow Plan and try again.";
+        setErrorMsg(message);
+        showToast(message);
+        return;
+      }
+    } catch (error) {
+      console.error("[PlanReview] Unable to refresh subscription timeline:", error);
+      setErrorMsg("Unable to verify your current subscription timeline. Please try again.");
       return;
     }
 
@@ -930,20 +1132,22 @@ const PlanReviewPage = () => {
         const newEndedDate = new Date(oldEndedDate.getTime());
         newEndedDate.setDate(newEndedDate.getDate() + shiftInDays);
 
-        // No backend update endpoint exists, so keep a seller-scoped local
-        // display override. This performs no network request and cannot create
-        // a payment, invoice, wallet transaction, or duplicate subscription.
-        const locallyRescheduledSubscription = {
-          ...scheduledSubscription,
+        const rescheduleResponse = await sellerService.rescheduleSubscription({
+          tableId: getSubscriptionTableId(scheduledSubscription),
+          sellerId,
+          email: sellerEmail,
+          planName: getSubscriptionPlanName(scheduledSubscription),
           status: "Scheduled",
           startedDate: toApiDateOnlyIso(newStartedDate),
           endedDate: toApiDateOnlyIso(newEndedDate)
-        };
-        const localScheduleKey = `growPlanScheduledOverride:${sellerId || sellerEmail}`;
-        window.localStorage.setItem(
-          localScheduleKey,
-          JSON.stringify(locallyRescheduledSubscription)
-        );
+        });
+        if (rescheduleResponse?.status !== "success") {
+          throw new Error(
+            rescheduleResponse?.message?.error ||
+            rescheduleResponse?.message ||
+            "The scheduled subscription could not be updated."
+          );
+        }
 
         const oldDateText = oldStartedDate.toLocaleDateString("en-GB", {
           day: "numeric", month: "long", year: "numeric"
@@ -1255,7 +1459,11 @@ const PlanReviewPage = () => {
                 </div>
                 <div className="plan-summary-row">
                   <span>Start Date</span>
-                  <span>{formatDisplayDate(scheduledSubscription.startedDate || scheduledSubscription.startDate)}</span>
+                  <span>{formatDisplayDate(
+                    scheduledSubscription.startedDate ||
+                    scheduledSubscription.startDate ||
+                    scheduledSubscription.Starteddate
+                  )}</span>
                 </div>
                 <div className="plan-summary-row">
                   <span>End Date</span>

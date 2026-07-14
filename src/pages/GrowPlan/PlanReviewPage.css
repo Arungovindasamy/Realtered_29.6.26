@@ -615,3 +615,11 @@
     width: 100%;
   }
 }
+
+@media (max-width: 640px) {
+  .plan-review-page { padding: 16px; overflow-x: clip; }
+  .plan-review-desktop-layout { padding: 0; }
+  .plan-review-left-card, .plan-review-right-card { min-width: 0; padding: 20px; box-sizing: border-box; }
+  .review-confirm-actions, .review-confirm-summary div { flex-direction: column; }
+  .review-confirm-summary strong { text-align: left; }
+}

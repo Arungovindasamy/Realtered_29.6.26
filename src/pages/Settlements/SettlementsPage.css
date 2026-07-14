@@ -1033,3 +1033,12 @@
     color: #059669;
   }
 }
+
+/* Responsive page-width overrides */
+.settlements-page-root { width: 100%; min-width: 0; max-width: 100%; overflow-x: clip; container-type: inline-size; }
+@container (max-width: 760px) {
+  .settlements-page-root, .settlements-card-body { padding: 16px; }
+  .settlements-filters-row { align-items: stretch; flex-direction: column; }
+  .settlements-page-root .search-bar-wrapper, .date-filter-container, .btn-date-filter, .drp-root { width: 100%; min-width: 0; max-width: none; }
+  .settlements-table-wrap { overflow-x: auto; max-width: 100%; }
+}

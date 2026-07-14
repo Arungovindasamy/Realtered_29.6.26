@@ -4203,6 +4203,33 @@ export const processSubscriptionOrder = async (payload) => {
   }
 };
 
+// Atomic upgrade operations are handled by the order endpoint so invoice,
+// previous-subscription update, and new-subscription creation share one result.
+export const upgradeSellerSubscription = async (payload) =>
+  processSubscriptionOrder(payload);
+
+// Date-only reschedule: intentionally omit invoice, wallet, referral,
+// transaction, and payment data so the already-paid record is reused.
+export const updateSubscriptionDates = async (subscription) => {
+  if (!subscription?.tableId) {
+    throw new Error("Subscription id is missing.");
+  }
+
+  const schedulingAction = subscription.schedulingAction || "reschedule";
+  return processSubscriptionOrder({
+    createSubscription: {
+      ...subscription,
+      schedulingAction,
+      ...(schedulingAction === "reschedule"
+        ? { existingScheduledTableId: subscription.tableId }
+        : {})
+    }
+  });
+};
+
+export const rescheduleSubscription = async (subscription) =>
+  updateSubscriptionDates({ ...subscription, schedulingAction: "reschedule" });
+
 export const getVideoResponse = async (guid) => {
   const response = await axios.get(`https://video.bunnycdn.com/library/583918/videos/${guid}`, {
     timeout: 15000,
@@ -4531,6 +4558,9 @@ export const sellerService = {
   verifyRazorpayPayment,
   createSubscription,
   processSubscriptionOrder,
+  upgradeSellerSubscription,
+  updateSubscriptionDates,
+  rescheduleSubscription,
   getVideoResponse,
   fetchSellerCampaignProduct,
   fetchOrders,

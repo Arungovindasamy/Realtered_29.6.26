@@ -76,6 +76,9 @@ export const getDurationMultiplier = (duration) => {
   return 1;
 };
 
+export const roundCurrency = (value) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
 // ─── Inclusive end-date calculations ─────────────────────────────────────────
 // endDate = startDate + durationMonths - 1 day
 export const calculateInclusiveEndDate = (startDateVal, duration) => {
@@ -91,10 +94,13 @@ export const calculateInclusiveEndDate = (startDateVal, duration) => {
 export const getInclusiveEffectiveEndDate = (subscription) => {
   if (!subscription) return null;
 
-  const start = parseLocalDate(subscription.startedDate || subscription.startDate);
+  const start = parseLocalDate(
+    subscription.startedDate || subscription.startDate || subscription.Starteddate
+  );
   const rawEnd = parseLocalDate(
     subscription.endedDate ||
     subscription.endDate ||
+    subscription.Endeddate ||
     subscription.expiryDate ||
     subscription.expiredOn ||
     subscription.validTill
@@ -109,6 +115,29 @@ export const getInclusiveEffectiveEndDate = (subscription) => {
   const corrected = new Date(rawEnd.getFullYear(), rawEnd.getMonth(), rawEnd.getDate());
   corrected.setDate(corrected.getDate() - 1);
   return corrected;
+};
+
+// When an upgrade has been scheduled inside the active plan's original term,
+// the credited/waived period begins on the scheduled start date. The old plan
+// therefore remains valid only through the preceding calendar day.
+export const getActiveEndBeforeScheduledStart = (activeSubscription, scheduledSubscription) => {
+  const activeEnd = getInclusiveEffectiveEndDate(activeSubscription);
+  const scheduledStart = parseLocalDate(
+    scheduledSubscription?.startedDate ||
+    scheduledSubscription?.startDate ||
+    scheduledSubscription?.Starteddate
+  );
+
+  if (!activeEnd || !scheduledStart || scheduledStart > activeEnd) {
+    return activeEnd;
+  }
+
+  const adjustedEnd = new Date(
+    scheduledStart.getFullYear(),
+    scheduledStart.getMonth(),
+    scheduledStart.getDate() - 1
+  );
+  return adjustedEnd;
 };
 
 // ─── Date diffing helpers ───────────────────────────────────────────────────
@@ -132,6 +161,35 @@ export const getPlanRank = (planName) => {
   if (name.includes("pro")) return 2;
   if (name.includes("growth")) return 1;
   return 0;
+};
+
+export const SCHEDULED_HIGHER_PLAN_ERROR = (planName) =>
+  `You already have a scheduled ${planName || "higher"} plan.\n\n` +
+  "A lower plan cannot be purchased because it would create an invalid subscription timeline.\n\n" +
+  `Please cancel your scheduled ${planName || "higher"} plan before purchasing a lower plan.`;
+
+// Classify before pricing or payment: the scheduled plan is the seller's
+// committed future subscription.
+export const getScheduledPlanPurchaseDecision = (selectedPlan, scheduledSubscription) => {
+  if (!selectedPlan || !scheduledSubscription) {
+    return { action: "purchase", blocked: false, message: "" };
+  }
+
+  const selectedName = selectedPlan.name || selectedPlan.planName || selectedPlan.plan;
+  const scheduledName = scheduledSubscription.planName || scheduledSubscription.plan || scheduledSubscription.subscriptionPlan;
+  const selectedRank = getPlanRank(selectedName);
+  const scheduledRank = getPlanRank(scheduledName);
+
+  if (!selectedRank || !scheduledRank) {
+    return { action: "purchase", blocked: false, message: "" };
+  }
+  if (selectedRank < scheduledRank) {
+    return { action: "reject", blocked: true, message: SCHEDULED_HIGHER_PLAN_ERROR(scheduledName) };
+  }
+  if (selectedRank === scheduledRank) {
+    return { action: "reschedule", blocked: false, message: "" };
+  }
+  return { action: "replace", blocked: false, message: "" };
 };
 
 // Renewal window: 1/2 months = last 7 days, 3 months = last 14 days, 6/12 months = last 30 days
@@ -207,7 +265,9 @@ export const calculateUpgradeWaiveOff = (currentSubscription, oldPlan, selectedS
   }
 
   const dailyRate = totalDays > 0 ? (oldEffectiveAmount / totalDays) : 0;
-  const remainingAmount = totalDays > 0 ? Math.max(0, Math.round(remainingDays * dailyRate)) : 0;
+  const remainingAmount = totalDays > 0
+    ? Math.max(0, roundCurrency(remainingDays * dailyRate))
+    : 0;
 
   return {
     oldEffectiveAmount,
@@ -260,16 +320,25 @@ export const calculatePlanPricing = ({
     ? calculateUpgradeWaiveOff(currentSubscription, oldPlan, selectedStartDate, plans)
     : { oldEffectiveAmount: 0, totalDays: 0, remainingDays: 0, dailyRate: 0, remainingAmount: 0 };
 
-  const remainingAmount = waiveOffDetails.remainingAmount;
+  const remainingAmount = Math.min(
+    roundCurrency(waiveOffDetails.remainingAmount),
+    roundCurrency(totalPrice)
+  );
 
   // Payable before wallet
-  const payableBeforeWallet = Math.max(totalPrice - remainingAmount - discountAmount, 0);
+  const payableBeforeWallet = roundCurrency(
+    Math.max(totalPrice - remainingAmount - discountAmount, 0)
+  );
 
   // Wallet
-  const walletUsedAmount = useWallet ? Math.min(walletBalance, payableBeforeWallet) : 0;
+  const walletUsedAmount = useWallet
+    ? roundCurrency(Math.min(walletBalance, payableBeforeWallet))
+    : 0;
 
   // Payable amount (Razorpay)
-  const payableAmount = Math.max(payableBeforeWallet - walletUsedAmount, 0);
+  const payableAmount = roundCurrency(
+    Math.max(payableBeforeWallet - walletUsedAmount, 0)
+  );
 
   return {
     basePrice,
